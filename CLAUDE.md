@@ -210,6 +210,14 @@ calls, which are out of scope until the `device` command group is built.
 `--device-ids` is the only targeting flag for now; revisit tag/all-devices
 once `device` exists.
 
+**`--device-ids` accepts device names as well as numeric ids** (added
+2026-09-12, discovered live testing that device console labels aren't the
+numeric id the API needs): each comma-separated token is looked up directly
+if numeric, otherwise resolved via `GET /search/devices?query=` (added to
+`internal/api/devices.go`), requiring exactly one match — an exact
+case-insensitive name match wins over multiple substring matches, and
+ambiguous/zero matches are a hard error listing candidates.
+
 **`--version` and `--rollout gradual|immediate` were dropped**: neither maps
 to a real field. Firmware version comes from server-parsed `firmwareInfo`,
 not a client-supplied value. There's no gradual-vs-immediate concept in the

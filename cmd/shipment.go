@@ -189,17 +189,13 @@ func shipmentDeployCmd() *cobra.Command {
 			if deviceIDsRaw == "" {
 				return fmt.Errorf("--device-ids is required")
 			}
-			deviceIDs, err := parseDeviceIDs(deviceIDsRaw)
-			if err != nil {
-				return err
-			}
 
 			client, err := requireClient()
 			if err != nil {
 				return err
 			}
 
-			devices, templateID, err := resolveDevices(client, deviceIDs)
+			devices, templateID, err := resolveDevices(client, deviceIDsRaw)
 			if err != nil {
 				return err
 			}
@@ -242,7 +238,7 @@ func shipmentDeployCmd() *cobra.Command {
 				PathToFirmware:           upload.Path,
 				FirmwareOriginalFileName: filepath.Base(file),
 				FirmwareInfo:             upload.FirmwareInfo,
-				DeviceIDs:                deviceIDs32(deviceIDs),
+				DeviceIDs:                deviceIDs32(devices),
 				ShipmentTime:             shipmentTime,
 			}
 			s, err := client.CreateShipment(req)
@@ -267,7 +263,7 @@ func shipmentDeployCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&file, "file", "", "Firmware file to upload (required)")
-	cmd.Flags().StringVar(&deviceIDsRaw, "device-ids", "", "Comma-separated device IDs to target (required)")
+	cmd.Flags().StringVar(&deviceIDsRaw, "device-ids", "", "Comma-separated device IDs or names to target (required)")
 	cmd.Flags().Int32Var(&templateIDFlag, "template-id", 0, "Template ID to cross-check against the resolved devices")
 	cmd.Flags().StringVar(&name, "name", "", "Shipment name (auto-generated if omitted)")
 	cmd.Flags().StringVar(&shipmentTime, "shipment-time", "", "ANY|NIGHT|MORNING|AFTERNOON|EVENING (default ANY)")
@@ -279,43 +275,87 @@ func shipmentDeployCmd() *cobra.Command {
 	return cmd
 }
 
-func parseDeviceIDs(raw string) ([]int64, error) {
+// splitDeviceTokens splits --device-ids on commas; each token may be a
+// numeric device id or a device name (resolved via a live search).
+func splitDeviceTokens(raw string) ([]string, error) {
 	parts := strings.Split(raw, ",")
-	ids := make([]int64, 0, len(parts))
+	tokens := make([]string, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
+		if p != "" {
+			tokens = append(tokens, p)
 		}
-		id, err := strconv.ParseInt(p, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid device id %q: %w", p, err)
-		}
-		ids = append(ids, id)
 	}
-	if len(ids) == 0 {
-		return nil, fmt.Errorf("--device-ids must contain at least one device id")
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("--device-ids must contain at least one device id or name")
 	}
-	return ids, nil
+	return tokens, nil
 }
 
-func deviceIDs32(ids []int64) []int32 {
-	out := make([]int32, len(ids))
-	for i, id := range ids {
-		out[i] = int32(id)
+func deviceIDs32(devices []api.Device) []int32 {
+	out := make([]int32, len(devices))
+	for i, d := range devices {
+		out[i] = int32(d.ID)
 	}
 	return out
 }
 
-// resolveDevices looks up each device id and confirms they all share one
-// template — a shipment is firmware for one template, so mixed templates
-// across --device-ids is a hard error.
-func resolveDevices(client *api.Client, ids []int64) ([]api.Device, int32, error) {
-	devices := make([]api.Device, 0, len(ids))
-	for _, id := range ids {
-		d, err := client.GetDevice(id)
+// resolveDeviceToken resolves one --device-ids token to a Device: a numeric
+// token is looked up directly, anything else is treated as a device name
+// and resolved via the search endpoint (which must yield exactly one match,
+// preferring an exact case-insensitive name match over a substring one).
+func resolveDeviceToken(client *api.Client, token string) (*api.Device, error) {
+	if id, err := strconv.ParseInt(token, 10, 64); err == nil {
+		return client.GetDevice(id)
+	}
+
+	results, err := client.SearchDevices(token)
+	if err != nil {
+		return nil, fmt.Errorf("search for device %q: %w", token, err)
+	}
+
+	var exact []api.Device
+	for _, d := range results {
+		if strings.EqualFold(d.Name, token) {
+			exact = append(exact, d)
+		}
+	}
+	switch {
+	case len(exact) == 1:
+		return &exact[0], nil
+	case len(exact) > 1:
+		return nil, fmt.Errorf("ambiguous device name %q, candidates: %s", token, deviceCandidates(exact))
+	case len(results) == 1:
+		return &results[0], nil
+	case len(results) > 1:
+		return nil, fmt.Errorf("ambiguous device name %q, candidates: %s", token, deviceCandidates(results))
+	default:
+		return nil, fmt.Errorf("no device found matching %q", token)
+	}
+}
+
+func deviceCandidates(devices []api.Device) string {
+	labels := make([]string, len(devices))
+	for i, d := range devices {
+		labels[i] = fmt.Sprintf("%s (id %d)", d.Name, d.ID)
+	}
+	return strings.Join(labels, ", ")
+}
+
+// resolveDevices resolves every --device-ids token and confirms they all
+// share one template — a shipment is firmware for one template, so mixed
+// templates across --device-ids is a hard error.
+func resolveDevices(client *api.Client, raw string) ([]api.Device, int32, error) {
+	tokens, err := splitDeviceTokens(raw)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	devices := make([]api.Device, 0, len(tokens))
+	for _, token := range tokens {
+		d, err := resolveDeviceToken(client, token)
 		if err != nil {
-			return nil, 0, fmt.Errorf("resolve device %d: %w", id, err)
+			return nil, 0, fmt.Errorf("resolve device %q: %w", token, err)
 		}
 		devices = append(devices, *d)
 	}

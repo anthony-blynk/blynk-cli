@@ -24,3 +24,22 @@ func (c *Client) GetDevice(deviceID int64) (*Device, error) {
 	}
 	return &d, nil
 }
+
+// deviceSearchResponse is the paginated wrapper returned by
+// GET /api/v1/organization/search/devices.
+type deviceSearchResponse struct {
+	Content       []Device `json:"content"`
+	TotalElements int32    `json:"totalElements"`
+}
+
+// SearchDevices calls GET /api/v1/organization/search/devices, letting
+// `shipment deploy --device-ids` accept a device name instead of requiring
+// its numeric id up front.
+func (c *Client) SearchDevices(query string) ([]Device, error) {
+	q := url.Values{"query": {query}}
+	var resp deviceSearchResponse
+	if err := c.Get("/api/v1/organization/search/devices", q, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Content, nil
+}
