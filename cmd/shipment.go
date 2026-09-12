@@ -174,6 +174,8 @@ func shipmentDeployCmd() *cobra.Command {
 	var shipmentTime string
 	var compareField string
 	var skipFwTypeCheck bool
+	var attemptsLimit int32
+	var attemptResetPeriod time.Duration
 	var wait, noWait bool
 	var waitTimeout time.Duration
 	var verbose bool
@@ -244,6 +246,8 @@ func shipmentDeployCmd() *cobra.Command {
 				ShipmentTime:             shipmentTime,
 				SkipFwTypeCheck:          skipFwTypeCheck,
 				CompareField:             compareField,
+				AttemptsLimit:            attemptsLimit,
+				AttemptResetPeriodMs:     attemptResetPeriod.Milliseconds(),
 			}
 			s, err := client.CreateShipment(req)
 			if err != nil {
@@ -273,6 +277,8 @@ func shipmentDeployCmd() *cobra.Command {
 	cmd.Flags().StringVar(&shipmentTime, "shipment-time", "", "ANY|NIGHT|MORNING|AFTERNOON|EVENING (default ANY)")
 	cmd.Flags().BoolVar(&skipFwTypeCheck, "skip-fw-type-check", false, "Bypass the device/template firmware-type compatibility check")
 	cmd.Flags().StringVar(&compareField, "compare-field", "", "NO_CONDITION|BUILD_DATE_DIFFERS|EARLIER_BUILD_DATE|LATEST_FIRMWARE_VERSION|LATEST_BLYNK_VERSION (default BUILD_DATE_DIFFERS)")
+	cmd.Flags().Int32Var(&attemptsLimit, "attempts-limit", 3, "Delivery attempts before giving up on a device (0 appears to mean the device is never notified)")
+	cmd.Flags().DurationVar(&attemptResetPeriod, "attempt-reset-period", 24*time.Hour, "Window over which attempts-limit applies")
 	cmd.Flags().BoolVar(&wait, "wait", false, "Poll until the rollout finishes (default on for a single device)")
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Don't poll, return immediately after creating the shipment")
 	cmd.Flags().DurationVar(&waitTimeout, "wait-timeout", 15*time.Minute, "Max time to wait for rollout completion")

@@ -198,9 +198,43 @@ blynk shipment deploy \
   [--template-id 421]         \
   [--name string]              \
   [--shipment-time ANY|NIGHT|MORNING|AFTERNOON|EVENING] \
+  [--compare-field NO_CONDITION|BUILD_DATE_DIFFERS|EARLIER_BUILD_DATE|LATEST_FIRMWARE_VERSION|LATEST_BLYNK_VERSION] \
+  [--skip-fw-type-check] [--attempts-limit 3] [--attempt-reset-period 24h] \
   [--wait] [--no-wait] [--wait-timeout 15m] [--verbose] \
   [--dry-run] [-y/--yes]
 ```
+
+### ⚠ Gotchas found via live testing against a real MQTT-connected device (2026-09-12)
+
+Three `shipment/create` fields the original design didn't know about turned
+out to matter a lot in practice — found by comparing a CLI-created shipment
+against an otherwise-identical UI-created one for the same file/device
+(`Nvidia ORIN`, template `Linux Agent`, firmware = a `docker-compose.yml` —
+this org ships container manifests as "firmware" to edge devices, and `.yml`/
+`.yaml` are legitimately on the accepted-upload-extensions list):
+
+- **`attemptsLimit` silently defaults server-side to `0`, which appears to
+  mean "make zero delivery attempts"** — a shipment left with no attempts
+  configured just sits at `started` forever with no `requestSent`, even
+  though the device is online, connected via MQTT, and would otherwise have
+  been notified immediately (confirmed: the UI defaults this to `3` attempts
+  / 24h and the device gets notified right away). **The CLI now defaults
+  `--attempts-limit` to `3` and `--attempt-reset-period` to `24h`** to match
+  the UI rather than the API's own default — this isn't a safety-relevant
+  default so there was no reason to leave the footgun in place.
+- **`skipFwTypeCheck` and `compareField` are left unset by the API default**
+  (`false` / `BUILD_DATE_DIFFERS`), but for a template like `Linux Agent`
+  whose "firmware" is a generic manifest with no meaningful `fwType`, the UI
+  appears to set `skipFwTypeCheck: true` (parsed `firmwareInfo.fwType` came
+  back empty from the upload endpoint for both the CLI and UI upload of the
+  identical file — confirmed by matching MD5 — yet only the
+  `skipFwTypeCheck`-equivalent path succeeds). **Left as explicit opt-in
+  flags, not new defaults** — unlike `attemptsLimit`, these two exist
+  specifically to gate a real safety check (wrong firmware type on a real
+  microcontroller device), so the CLI shouldn't silently bypass them for
+  every deploy. Pass `--skip-fw-type-check` (and usually `--compare-field
+  NO_CONDITION` too, to also bypass the build-date/version comparison during
+  testing) for templates like this one.
 
 **`--tag-id`/`--all-devices` targeting was dropped** (decided 2026-09-12):
 `POST /shipment/create` only accepts an explicit `deviceIds` array — no

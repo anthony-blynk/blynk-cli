@@ -83,6 +83,13 @@ type CreateShipmentRequest struct {
 	// LATEST_FIRMWARE_VERSION | LATEST_BLYNK_VERSION. Server defaults to
 	// BUILD_DATE_DIFFERS when omitted.
 	CompareField string `json:"compareField,omitempty"`
+	// AttemptsLimit/AttemptResetPeriodMs: how many delivery attempts the
+	// shipment engine will make (and over what window) before giving up on
+	// a device. Left unset, the server defaulted this to 0 in live testing
+	// — which appears to mean zero attempts, i.e. the device is never
+	// actually notified — while the UI defaults to 3 attempts / 24h.
+	AttemptsLimit        int32 `json:"attemptsLimit,omitempty"`
+	AttemptResetPeriodMs int64 `json:"attemptResetPeriodMs,omitempty"`
 }
 
 // ListShipments calls GET /api/v1/organization/shipments.
