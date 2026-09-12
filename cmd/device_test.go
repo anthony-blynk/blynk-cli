@@ -13,7 +13,7 @@ import (
 
 func TestDeviceTableHidesTokenByDefault(t *testing.T) {
 	d := &api.Device{ID: 1, Name: "boiler-3", Token: "super-secret-device-token"}
-	tbl := deviceTable(d, true, false)
+	tbl := deviceTable(d, true, false, "")
 	for _, row := range tbl.Rows {
 		for _, cell := range row {
 			if strings.Contains(cell, "super-secret-device-token") {
@@ -25,7 +25,7 @@ func TestDeviceTableHidesTokenByDefault(t *testing.T) {
 
 func TestDeviceTableRevealsTokenWhenAsked(t *testing.T) {
 	d := &api.Device{ID: 1, Name: "boiler-3", Token: "super-secret-device-token"}
-	tbl := deviceTable(d, true, true)
+	tbl := deviceTable(d, true, true, "")
 	found := false
 	for _, row := range tbl.Rows {
 		if len(row) == 2 && row[0] == "token" && row[1] == "super-secret-device-token" {
@@ -46,7 +46,7 @@ func TestDeviceTableOnlineStatus(t *testing.T) {
 		{false, "offline"},
 	}
 	for _, tc := range cases {
-		tbl := deviceTable(&api.Device{ID: 1}, tc.online, false)
+		tbl := deviceTable(&api.Device{ID: 1}, tc.online, false, "")
 		found := false
 		for _, row := range tbl.Rows {
 			if len(row) == 2 && row[0] == "online" && row[1] == tc.want {
@@ -60,7 +60,7 @@ func TestDeviceTableOnlineStatus(t *testing.T) {
 }
 
 func TestDeviceTableOmitsMissingHardwareInfo(t *testing.T) {
-	tbl := deviceTable(&api.Device{ID: 1, Name: "n"}, false, false)
+	tbl := deviceTable(&api.Device{ID: 1, Name: "n"}, false, false, "")
 	for _, row := range tbl.Rows {
 		if len(row) > 0 && row[0] == "firmware_version" {
 			t.Errorf("firmware_version row present with nil HardwareInfo: %v", tbl.Rows)
@@ -77,7 +77,7 @@ func TestDeviceTableIncludesFirmwareVersion(t *testing.T) {
 			BoardType: "Other",
 		},
 	}
-	tbl := deviceTable(d, true, false)
+	tbl := deviceTable(d, true, false, "")
 	found := false
 	for _, row := range tbl.Rows {
 		if len(row) == 2 && row[0] == "firmware_version" && row[1] == "2.3.1" {
@@ -86,6 +86,41 @@ func TestDeviceTableIncludesFirmwareVersion(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected firmware_version row = 2.3.1, got %v", tbl.Rows)
+	}
+}
+
+func TestDeviceTableShowsTemplateNameWhenResolved(t *testing.T) {
+	tbl := deviceTable(&api.Device{ID: 1, TemplateID: 345660}, false, false, "Linux Agent")
+	found := false
+	for _, row := range tbl.Rows {
+		if len(row) == 2 && row[0] == "template" && row[1] == "Linux Agent (345660)" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected template row = 'Linux Agent (345660)', got %v", tbl.Rows)
+	}
+}
+
+func TestDeviceTableFallsBackToTemplateIDWhenNameUnresolved(t *testing.T) {
+	tbl := deviceTable(&api.Device{ID: 1, TemplateID: 345660}, false, false, "")
+	found := false
+	for _, row := range tbl.Rows {
+		if len(row) == 2 && row[0] == "template" && row[1] == "345660" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected template row = '345660' (numeric fallback), got %v", tbl.Rows)
+	}
+}
+
+func TestTemplateLabel(t *testing.T) {
+	if got, want := templateLabel(345660, "Linux Agent"), "Linux Agent (345660)"; got != want {
+		t.Errorf("templateLabel(with name) = %q, want %q", got, want)
+	}
+	if got, want := templateLabel(345660, ""), "345660"; got != want {
+		t.Errorf("templateLabel(no name) = %q, want %q", got, want)
 	}
 }
 
@@ -176,5 +211,101 @@ func TestFetchOnlineStatusesManyDevicesPreservesOrder(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("index %d: got %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// mockTemplateServer serves GET /organization/template (by id) and
+// GET /organization/templates (list, single page) from an in-memory list.
+func mockTemplateServer(t *testing.T, templates []api.Template) *api.Client {
+	t.Helper()
+	byID := map[string]api.Template{}
+	for _, tpl := range templates {
+		byID[strconv.FormatInt(int64(tpl.ID), 10)] = tpl
+	}
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/organization/template":
+			tpl, ok := byID[r.URL.Query().Get("templateId")]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte(`{"message":"template not found"}`))
+				return
+			}
+			json.NewEncoder(w).Encode(tpl)
+		case "/api/v1/organization/templates":
+			json.NewEncoder(w).Encode(map[string]any{
+				"content":       templates,
+				"totalElements": len(templates),
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := api.NewClient(srv.Listener.Addr().String(), "faketoken")
+	c.HTTP = srv.Client()
+	return c
+}
+
+func TestResolveTemplateTokenNumericID(t *testing.T) {
+	client := mockTemplateServer(t, []api.Template{{ID: 345660, Name: "Linux Agent"}})
+	tpl, err := resolveTemplateToken(client, "345660")
+	if err != nil {
+		t.Fatalf("resolveTemplateToken: %v", err)
+	}
+	if tpl.Name != "Linux Agent" {
+		t.Errorf("Name = %q, want Linux Agent", tpl.Name)
+	}
+}
+
+func TestResolveTemplateTokenByExactName(t *testing.T) {
+	client := mockTemplateServer(t, []api.Template{
+		{ID: 1, Name: "Linux Agent"},
+		{ID: 2, Name: "Linux Agent Extra"},
+	})
+	tpl, err := resolveTemplateToken(client, "Linux Agent")
+	if err != nil {
+		t.Fatalf("resolveTemplateToken: %v", err)
+	}
+	if tpl.ID != 1 {
+		t.Errorf("expected the exact-name match (id 1), got %+v", tpl)
+	}
+}
+
+func TestResolveTemplateTokenAmbiguousIsError(t *testing.T) {
+	client := mockTemplateServer(t, []api.Template{
+		{ID: 1, Name: "template-a"},
+		{ID: 2, Name: "template-b"},
+	})
+	if _, err := resolveTemplateToken(client, "template"); err == nil {
+		t.Fatal("expected an ambiguous-match error")
+	}
+}
+
+func TestResolveTemplateTokenNoMatchIsError(t *testing.T) {
+	client := mockTemplateServer(t, []api.Template{{ID: 1, Name: "template-a"}})
+	if _, err := resolveTemplateToken(client, "nonexistent"); err == nil {
+		t.Fatal("expected a no-match error")
+	}
+}
+
+func TestTemplateNamesDedupesAndFallsBackOnError(t *testing.T) {
+	client := mockTemplateServer(t, []api.Template{
+		{ID: 100, Name: "template-a"},
+		// 200 deliberately absent from the server's template set, so its
+		// lookup fails and it should just be missing from the result map.
+	})
+	devices := []api.Device{
+		{ID: 1, TemplateID: 100},
+		{ID: 2, TemplateID: 100}, // same template as device 1 — should only be fetched once conceptually
+		{ID: 3, TemplateID: 200},
+	}
+	names := templateNames(client, devices)
+	if names[100] != "template-a" {
+		t.Errorf("names[100] = %q, want template-a", names[100])
+	}
+	if _, ok := names[200]; ok {
+		t.Errorf("names[200] should be absent (lookup failure), got %q", names[200])
 	}
 }

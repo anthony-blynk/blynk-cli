@@ -355,6 +355,7 @@ blynk-cli/
       oauth.go             # client-credentials token fetch + expiry tracking
       organization.go        # GET /organization/profile (whoami + profile-add validation)
       devices.go             # GET /device, /devices (list), /search/devices, /device/online
+      templates.go             # minimal GET /template, /templates (id<->name only, for device list/get)
       uploads.go              # POST /api/upload (multipart firmware upload)
       shipments.go             # typed request/response structs + calls for the Shipments endpoints
     output/
@@ -405,9 +406,39 @@ group from the original design sketch (no create/edit/delete/datastream/
 tag-assignment/etc.) — ask before expanding this beyond `list`/`get`.
 
 ```
-device list  [--org-id] [--include-sub-org-devices] [--page] [--size] [--all] [--online] [--reveal]
+device list  [--org-id] [--include-sub-org-devices] [--page] [--size] [--all] [--online] [--reveal] [--template <id-or-name>]
 device get    --id <id-or-name> [--reveal]
 ```
+
+**Template names, and `--template` filtering** (added 2026-09-12, on
+request — a bare numeric `templateId` "wasn't so handy"): both commands now
+show a resolved template name (`Linux Agent (345660)`, falling back to just
+the numeric id if the lookup fails) instead of a bare id, and `device list
+--template <id-or-name>` filters to one template's devices.
+- Added a minimal `internal/api/templates.go` (`Template{ID, Name}`,
+  `GetTemplate`, `ListTemplates`) — same "just enough for this feature, not
+  the whole group" pattern as `devices.go`. **There is no template
+  search-by-name endpoint** (verified against the docs), so resolving
+  `--template` by name means listing every template and matching
+  client-side (`resolveTemplateToken` in `cmd/device.go`, same
+  exact-then-substring approach as `resolveDeviceToken`).
+- **Neither `GET /devices` nor `GET /search/devices` supports filtering by
+  templateId/productId server-side** (verified against the docs) — so
+  `device list --template` fetches every page and filters client-side
+  regardless of `--all`/`--page`/`--size`. A partial page filtered down
+  would look like "this template has no devices" when it might just mean
+  "none of the devices *on this page* match" — always fetching every page
+  when filtering avoids that trap; `--page`/`--size` still control the
+  underlying batch size, just not how many batches get fetched.
+- `device list`'s template-name resolution is **on by default, not
+  gated behind a flag like `--online`** — the cost is one call per
+  *distinct* template across the page (normally far fewer than the
+  device count), not one per device, so the "surprisingly slow --all"
+  concern that justified gating `--online` doesn't really apply here.
+  `templateNames` in `cmd/device.go` dedupes by id and fetches
+  concurrently (same bounded-8 pattern as `fetchOnlineStatuses`); a
+  failed lookup just falls back to the numeric id for that row rather
+  than failing the whole listing.
 
 **`device list --online`** (added 2026-09-12, on request): shows a live
 online status per row too. Off by default, since it's a separate call to
