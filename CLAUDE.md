@@ -222,19 +222,29 @@ this org ships container manifests as "firmware" to edge devices, and `.yml`/
   `--attempts-limit` to `3` and `--attempt-reset-period` to `24h`** to match
   the UI rather than the API's own default — this isn't a safety-relevant
   default so there was no reason to leave the footgun in place.
-- **`skipFwTypeCheck` and `compareField` are left unset by the API default**
-  (`false` / `BUILD_DATE_DIFFERS`), but for a template like `Linux Agent`
-  whose "firmware" is a generic manifest with no meaningful `fwType`, the UI
-  appears to set `skipFwTypeCheck: true` (parsed `firmwareInfo.fwType` came
-  back empty from the upload endpoint for both the CLI and UI upload of the
-  identical file — confirmed by matching MD5 — yet only the
-  `skipFwTypeCheck`-equivalent path succeeds). **Left as explicit opt-in
-  flags, not new defaults** — unlike `attemptsLimit`, these two exist
-  specifically to gate a real safety check (wrong firmware type on a real
-  microcontroller device), so the CLI shouldn't silently bypass them for
-  every deploy. Pass `--skip-fw-type-check` (and usually `--compare-field
-  NO_CONDITION` too, to also bypass the build-date/version comparison during
-  testing) for templates like this one.
+- **`skipFwTypeCheck` is now auto-applied when the uploaded file has no
+  `fwType` metadata** (added 2026-09-12, after the user pushed back on
+  needing `--skip-fw-type-check` by hand every time for `Linux Agent`-style
+  devices). The check compares against `firmwareInfo.fwType`, which the
+  upload endpoint's parser can only populate from genuine embedded-firmware
+  metadata — a plain manifest like `docker-compose.yml` will *always* come
+  back with `fwType: ""` (confirmed identical between a CLI and UI upload of
+  the same file via matching MD5), so enforcing the check in that case can
+  never succeed and adds nothing. **This looks like an actual bug in the
+  Platform API** (or at least a real design gap) — a safety check with no
+  possible non-failing outcome isn't protecting anything; the fix belongs
+  upstream, not in every API caller. `cmd/shipment.go`'s deploy command now
+  checks `upload.FirmwareInfo.FwType == ""` right after upload and force-sets
+  `SkipFwTypeCheck` in that case, printing a one-line notice; `--skip-fw-type-check`
+  still exists as a manual override for the (currently untested) case of a
+  file that *does* have real `fwType` metadata but you want the check
+  bypassed anyway.
+- **`compareField` is still left as an explicit opt-in flag**, not
+  auto-applied — unlike the fwType case, there's no "this can never succeed"
+  argument for `BUILD_DATE_DIFFERS`; it's a legitimate default that avoids
+  redundant re-flashing of a device already on the same build. Pass
+  `--compare-field NO_CONDITION` explicitly when you want to force a
+  redeploy of an unchanged file (e.g. repeated testing).
 
 **`--tag-id`/`--all-devices` targeting was dropped** (decided 2026-09-12):
 `POST /shipment/create` only accepts an explicit `deviceIds` array — no

@@ -235,6 +235,22 @@ func shipmentDeployCmd() *cobra.Command {
 				fmt.Printf("✓ Uploaded %s (%s)\n", filepath.Base(file), humanBytes(info.Size()))
 			}
 
+			// The firmware-type check compares against firmwareInfo.fwType.
+			// When the uploaded file has no fwType (e.g. a docker-compose.yml
+			// or other non-firmware "firmware" artifact — nothing for the
+			// server's parser to extract), the check can never succeed for
+			// any device, so leaving it enabled just guarantees a failure
+			// with no useful signal. Skip it automatically in that case;
+			// --skip-fw-type-check remains available to force it off even
+			// when fwType is present.
+			effectiveSkipFwTypeCheck := skipFwTypeCheck
+			if upload.FirmwareInfo == nil || upload.FirmwareInfo.FwType == "" {
+				if !effectiveSkipFwTypeCheck {
+					fmt.Println("  (no fwType metadata on this file — firmware-type check skipped automatically)")
+				}
+				effectiveSkipFwTypeCheck = true
+			}
+
 			req := api.CreateShipmentRequest{
 				OrgID:                    flagOrgID,
 				ProductID:                templateID,
@@ -244,7 +260,7 @@ func shipmentDeployCmd() *cobra.Command {
 				FirmwareInfo:             upload.FirmwareInfo,
 				DeviceIDs:                deviceIDs32(devices),
 				ShipmentTime:             shipmentTime,
-				SkipFwTypeCheck:          skipFwTypeCheck,
+				SkipFwTypeCheck:          effectiveSkipFwTypeCheck,
 				CompareField:             compareField,
 				AttemptsLimit:            attemptsLimit,
 				AttemptResetPeriodMs:     attemptResetPeriod.Milliseconds(),
@@ -275,7 +291,7 @@ func shipmentDeployCmd() *cobra.Command {
 	cmd.Flags().Int32Var(&templateIDFlag, "template-id", 0, "Template ID to cross-check against the resolved devices")
 	cmd.Flags().StringVar(&name, "name", "", "Shipment name (auto-generated if omitted)")
 	cmd.Flags().StringVar(&shipmentTime, "shipment-time", "", "ANY|NIGHT|MORNING|AFTERNOON|EVENING (default ANY)")
-	cmd.Flags().BoolVar(&skipFwTypeCheck, "skip-fw-type-check", false, "Bypass the device/template firmware-type compatibility check")
+	cmd.Flags().BoolVar(&skipFwTypeCheck, "skip-fw-type-check", false, "Force-bypass the firmware-type check (auto-skipped already when the file has no fwType metadata)")
 	cmd.Flags().StringVar(&compareField, "compare-field", "", "NO_CONDITION|BUILD_DATE_DIFFERS|EARLIER_BUILD_DATE|LATEST_FIRMWARE_VERSION|LATEST_BLYNK_VERSION (default BUILD_DATE_DIFFERS)")
 	cmd.Flags().Int32Var(&attemptsLimit, "attempts-limit", 3, "Delivery attempts before giving up on a device (0 appears to mean the device is never notified)")
 	cmd.Flags().DurationVar(&attemptResetPeriod, "attempt-reset-period", 24*time.Hour, "Window over which attempts-limit applies")
