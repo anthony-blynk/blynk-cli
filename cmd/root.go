@@ -27,10 +27,20 @@ var (
 	flagYes          bool
 )
 
+// Version, Commit, and Date are set via -ldflags at build time (see
+// .goreleaser.yaml); "dev"/"none"/"unknown" are the `go build`/`go run`
+// defaults for a non-release build.
+var (
+	Version = "dev"
+	Commit  = "none"
+	Date    = "unknown"
+)
+
 // RootCmd is the entry point for the blynk-cli command tree.
 var RootCmd = &cobra.Command{
 	Use:           "blynk",
 	Short:         "Command-line client for the Blynk Platform API",
+	Version:       fmt.Sprintf("%s (commit %s, built %s)", Version, Commit, Date),
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }

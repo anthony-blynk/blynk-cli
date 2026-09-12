@@ -1,0 +1,47 @@
+version: 2
+
+project_name: blynk-cli
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: blynk
+    binary: blynk
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/anthony-blynk/blynk-cli/cmd.Version={{ .Version }}
+      - -X github.com/anthony-blynk/blynk-cli/cmd.Commit={{ .ShortCommit }}
+      - -X github.com/anthony-blynk/blynk-cli/cmd.Date={{ .Date }}
+
+archives:
+  - id: default
+    formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+      - "^ci:"
+
+release:
+  github:
+    owner: anthony-blynk
+    name: blynk-cli
