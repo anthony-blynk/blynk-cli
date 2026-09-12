@@ -42,10 +42,34 @@ func (e *apiError) Error() string {
 	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Raw)
 }
 
-// errorBody covers the shapes the Platform API is known to return errors in.
+// errorBody covers the shapes the Platform API is known to return errors in:
+// a flat {"message": "..."}, a flat {"error": "..."}, and a nested
+// {"error": {"message": "..."}} (confirmed live from the OAuth2-scope-check
+// path — /organization/profile with an insufficiently-scoped client).
 type errorBody struct {
-	Message string `json:"message"`
-	Error   string `json:"error"`
+	Message string          `json:"message"`
+	Error   json.RawMessage `json:"error"`
+}
+
+// text extracts the human-readable message from whichever shape Error is.
+func (eb errorBody) text() string {
+	if eb.Message != "" {
+		return eb.Message
+	}
+	if len(eb.Error) == 0 {
+		return ""
+	}
+	var nested struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(eb.Error, &nested) == nil && nested.Message != "" {
+		return nested.Message
+	}
+	var flat string
+	if json.Unmarshal(eb.Error, &flat) == nil {
+		return flat
+	}
+	return ""
 }
 
 // Get issues a GET request with the given query params, decoding the JSON
@@ -116,11 +140,7 @@ func (c *Client) do(method, path string, query url.Values, body, out any) error 
 		apiErr := &apiError{StatusCode: resp.StatusCode, Raw: string(respBody)}
 		var eb errorBody
 		if json.Unmarshal(respBody, &eb) == nil {
-			if eb.Message != "" {
-				apiErr.Message = eb.Message
-			} else if eb.Error != "" {
-				apiErr.Message = eb.Error
-			}
+			apiErr.Message = eb.text()
 		}
 		return apiErr
 	}

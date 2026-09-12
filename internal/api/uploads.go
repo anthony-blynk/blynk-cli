@@ -84,11 +84,7 @@ func (c *Client) UploadFirmware(filePath string) (*UploadResponse, error) {
 		apiErr := &apiError{StatusCode: resp.StatusCode, Raw: string(respBody)}
 		var eb errorBody
 		if json.Unmarshal(respBody, &eb) == nil {
-			if eb.Message != "" {
-				apiErr.Message = eb.Message
-			} else if eb.Error != "" {
-				apiErr.Message = eb.Error
-			}
+			apiErr.Message = eb.text()
 		}
 		return nil, apiErr
 	}
