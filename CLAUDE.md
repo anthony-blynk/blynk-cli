@@ -13,14 +13,15 @@ sessions.
 
 ## Current scope (build this first)
 
-Only two command groups for now: **`profile`/`auth`** and **`shipment`**.
-Everything else (device, org, template, tag, automation, webhook, user,
-provisioning, static-token, upload, oauth) is designed (see below) but not
-being implemented yet — don't scaffold those commands until asked.
+**`profile`/`auth`**, **`shipment`**, and now a **minimal `device`** group
+(`list`/`get` only — see below). Everything else (org, template, tag,
+automation, webhook, user, provisioning, static-token, upload, oauth) is
+designed (see below) but not being implemented yet — don't scaffold those
+commands until asked.
 
-**Status: both are implemented** (`cmd/profile.go`, `cmd/auth.go`,
-`cmd/shipment.go`, `internal/api/{client,oauth,organization,devices,
-uploads,shipments}.go`, `internal/config/*`, `internal/output/table.go`).
+**Status: implemented** (`cmd/profile.go`, `cmd/auth.go`, `cmd/shipment.go`,
+`cmd/device.go`, `internal/api/{client,oauth,organization,devices,uploads,
+shipments}.go`, `internal/config/*`, `internal/output/table.go`).
 Per-OS config-file permission enforcement (chmod/icacls) was explicitly
 deferred — not implemented yet, still worth doing later per the "Storage"
 section below.
@@ -339,6 +340,7 @@ blynk-cli/
     profile.go          # profile add/list/use/remove/show/rename/switch
     auth.go              # auth login/token/whoami/logout
     shipment.go           # shipment list/get/stop/delete/deploy
+    device.go              # device list/get (minimal — online status + firmware version)
     prompt.go             # masked secret prompt, y/N confirm
     picker.go              # profile switch's interactive fzf-style picker
   internal/
@@ -352,7 +354,7 @@ blynk-cli/
                           # token injection, error unwrapping
       oauth.go             # client-credentials token fetch + expiry tracking
       organization.go        # GET /organization/profile (whoami + profile-add validation)
-      devices.go             # minimal GET /device (name/templateId only, for shipment deploy)
+      devices.go             # GET /device, /devices (list), /search/devices, /device/online
       uploads.go              # POST /api/upload (multipart firmware upload)
       shipments.go             # typed request/response structs + calls for the Shipments endpoints
     output/
@@ -395,12 +397,57 @@ BLYNK_TEST_SERVER=fra.blynk-qa.com BLYNK_TEST_TOKEN=... go test ./internal/api/.
 Deliberately limited to read-only calls (`whoami`, `shipment list`) — it
 must never create/mutate anything, since it can run against a real org.
 
+## `device` command group (minimal — added 2026-09-12)
+
+Added on request, scoped narrowly to two things: checking whether a device
+is online, and seeing its firmware version. Not the full device command
+group from the original design sketch (no create/edit/delete/datastream/
+tag-assignment/etc.) — ask before expanding this beyond `list`/`get`.
+
+```
+device list  [--org-id] [--include-sub-org-devices] [--page] [--size] [--all]
+device get    --id <id-or-name> [--reveal]
+```
+
+Verified against the live docs before implementing:
+- `GET /organization/devices` (list, paginated `{content, totalElements}`,
+  same shape as the search endpoint — factored into a shared `devicePage`
+  type in `internal/api/devices.go`) **does** include `hardwareInfo` (so
+  firmware version is free in `device list`, no per-row extra calls) but
+  **not** `lifecycleStatus`/connect metadata (only the single-device
+  `GET /device` has that).
+- **Device connectivity is a separate endpoint entirely**:
+  `GET /organization/device/online?deviceId=` → `{"connected": bool}`. It is
+  *not* part of the Device object, and `lifecycleStatus` (present on
+  `GET /device`) is a provisioning/lifecycle state, not live connectivity —
+  don't conflate the two.
+- `hardwareInfo.templateId` is a **string**, the alphanumeric id embedded in
+  firmware (e.g. `TMPL0X9F`) — a different value in a different format from
+  the numeric `Device.templateId` (int32). Same field name, different
+  meaning; see `DeviceHardwareInfo.TemplateID`'s doc comment.
+
+`device get --id` accepts a device name as well as a numeric id (reuses
+`resolveDeviceToken` from `cmd/shipment.go` — same search-based resolution
+`shipment deploy --device-ids` uses), then always re-fetches via
+`GetDevice` for a consistent full schema regardless of which path resolved
+it, then calls `IsOnline` separately.
+
+**`-q`/`--quiet` on `device get` prints just `online` or `offline`** — this
+was clearly the intended use of that global flag; its doc string already
+said "e.g. just `online`/`offline`" before this command existed.
+
+The device's own auth `token` field is a credential — hidden by default in
+both table and JSON/YAML output (redacted before rendering, not just
+omitted from the table), shown only with `--reveal`, mirroring
+`profile show`'s existing convention.
+
 ## Also designed but NOT being built yet
 
-Full command-tree sketch exists for: `org`, `device`, `datastream`,
-`template` (+ nested `datastream`/`event`/`metafield`), `tag`, `automation`,
-`webhook`, `user`, `provision`/`static-token`, `upload`, `oauth`. Ask before
-scaffolding these — scope for now is `profile`/`auth` + `shipment` only.
+Full command-tree sketch exists for: `org`, `datastream`, `template`
+(+ nested `datastream`/`event`/`metafield`), `tag`, `automation`, `webhook`,
+`user`, `provision`/`static-token`, `upload`, `oauth`, and the rest of
+`device` beyond `list`/`get` (create/edit/delete/datastream/tag-assignment/
+etc.). Ask before scaffolding these.
 
 ## Environment
 
