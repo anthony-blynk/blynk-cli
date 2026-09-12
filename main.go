@@ -1,7 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/anthony-blynk/blynk-cli/cmd"
+)
 
 func main() {
-	fmt.Println("blynk-cli placeholder")
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
+	}
 }
