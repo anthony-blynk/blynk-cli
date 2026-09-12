@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/anthony-blynk/blynk-cli/internal/api"
 	"github.com/anthony-blynk/blynk-cli/internal/output"
@@ -23,8 +24,19 @@ func init() {
 	)
 }
 
+// deviceListItem is what `device list` actually renders: a Device with its
+// auth token redacted by default (mirroring `device get`/`profile show`),
+// plus an online status that's only populated (and only serialized, via
+// omitempty) when --online was passed.
+type deviceListItem struct {
+	api.Device
+	Online string `json:"online,omitempty"`
+}
+
 func deviceListCmd() *cobra.Command {
 	var includeSubOrgDevices bool
+	var checkOnline bool
+	var reveal bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -50,27 +62,83 @@ func deviceListCmd() *cobra.Command {
 				page++
 			}
 
-			t := &output.Table{Headers: []string{"ID", "NAME", "TEMPLATE", "FIRMWARE", "BOARD"}}
-			for _, d := range devices {
+			var onlineStatuses []string
+			if checkOnline {
+				onlineStatuses = fetchOnlineStatuses(client, devices)
+			}
+
+			headers := []string{"ID", "NAME", "TEMPLATE", "FIRMWARE", "BOARD"}
+			if checkOnline {
+				headers = append(headers, "ONLINE")
+			}
+			t := &output.Table{Headers: headers}
+
+			items := make([]deviceListItem, len(devices))
+			for i, d := range devices {
+				item := deviceListItem{Device: d}
+				if !reveal {
+					item.Token = ""
+				}
+
 				version, board := "", ""
 				if d.HardwareInfo != nil {
 					version = d.HardwareInfo.Version
 					board = d.HardwareInfo.BoardType
 				}
-				t.Rows = append(t.Rows, []string{
+				row := []string{
 					strconv.FormatInt(d.ID, 10),
 					d.Name,
 					strconv.FormatInt(int64(d.TemplateID), 10),
 					version,
 					board,
-				})
+				}
+				if checkOnline {
+					item.Online = onlineStatuses[i]
+					row = append(row, onlineStatuses[i])
+				}
+
+				items[i] = item
+				t.Rows = append(t.Rows, row)
 			}
-			return output.Render(os.Stdout, flagOutput, devices, t)
+			return output.Render(os.Stdout, flagOutput, items, t)
 		},
 	}
 
 	cmd.Flags().BoolVar(&includeSubOrgDevices, "include-sub-org-devices", false, "Include devices from sub-organizations")
+	cmd.Flags().BoolVar(&checkOnline, "online", false, "Also check and show each device's live online status (one extra request per device)")
+	cmd.Flags().BoolVar(&reveal, "reveal", false, "Show each device's auth token")
 	return cmd
+}
+
+// fetchOnlineStatuses checks IsOnline for every device concurrently (bounded
+// so a large --all listing doesn't fire hundreds of requests at once), and
+// returns "online"/"offline"/"?" (on a per-device error) in the same order
+// as devices — one bad response shouldn't blank out the whole listing.
+func fetchOnlineStatuses(client *api.Client, devices []api.Device) []string {
+	const maxConcurrency = 8
+	statuses := make([]string, len(devices))
+	sem := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+
+	for i, d := range devices {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, deviceID int64) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			online, err := client.IsOnline(deviceID)
+			switch {
+			case err != nil:
+				statuses[i] = "?"
+			case online:
+				statuses[i] = "online"
+			default:
+				statuses[i] = "offline"
+			}
+		}(i, d.ID)
+	}
+	wg.Wait()
+	return statuses
 }
 
 func deviceGetCmd() *cobra.Command {

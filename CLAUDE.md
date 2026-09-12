@@ -405,9 +405,18 @@ group from the original design sketch (no create/edit/delete/datastream/
 tag-assignment/etc.) — ask before expanding this beyond `list`/`get`.
 
 ```
-device list  [--org-id] [--include-sub-org-devices] [--page] [--size] [--all]
+device list  [--org-id] [--include-sub-org-devices] [--page] [--size] [--all] [--online] [--reveal]
 device get    --id <id-or-name> [--reveal]
 ```
+
+**`device list --online`** (added 2026-09-12, on request): shows a live
+online status per row too. Off by default, since it's a separate call to
+`/device/online` per device (not part of the list response) — opting in
+means one extra request per row, which would be surprising as a default for
+a large `--all` listing. `fetchOnlineStatuses` in `cmd/device.go` bounds
+concurrency (8 at a time) rather than firing every request at once or doing
+them serially; a single device's request failing renders `?` for just that
+row instead of failing the whole listing.
 
 Verified against the live docs before implementing:
 - `GET /organization/devices` (list, paginated `{content, totalElements}`,
@@ -439,7 +448,11 @@ said "e.g. just `online`/`offline`" before this command existed.
 The device's own auth `token` field is a credential — hidden by default in
 both table and JSON/YAML output (redacted before rendering, not just
 omitted from the table), shown only with `--reveal`, mirroring
-`profile show`'s existing convention.
+`profile show`'s existing convention. **`device list` needs this too, not
+just `get`** — the list endpoint returns `token` per device same as the
+single-device one, so its JSON output was leaking every listed device's
+auth token before this was caught (fixed same day as `--online`, via the
+`deviceListItem` wrapper type rather than rendering raw `[]api.Device`).
 
 ## Also designed but NOT being built yet
 
