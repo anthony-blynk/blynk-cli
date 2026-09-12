@@ -74,6 +74,15 @@ type CreateShipmentRequest struct {
 	DeviceIDs                []int32       `json:"deviceIds"`
 	ShipmentTime             string        `json:"shipmentTime,omitempty"`
 	Host                     string        `json:"host,omitempty"`
+	// SkipFwTypeCheck bypasses the device/template fw-type compatibility
+	// check — needed for non-firmware "firmware" artifacts (e.g. a
+	// docker-compose.yml shipped to a container-based device) that have no
+	// meaningful fwType for the check to compare against.
+	SkipFwTypeCheck bool `json:"skipFwTypeCheck,omitempty"`
+	// CompareField: NO_CONDITION | BUILD_DATE_DIFFERS | EARLIER_BUILD_DATE |
+	// LATEST_FIRMWARE_VERSION | LATEST_BLYNK_VERSION. Server defaults to
+	// BUILD_DATE_DIFFERS when omitted.
+	CompareField string `json:"compareField,omitempty"`
 }
 
 // ListShipments calls GET /api/v1/organization/shipments.

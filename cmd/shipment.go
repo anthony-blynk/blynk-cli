@@ -172,6 +172,8 @@ func shipmentDeployCmd() *cobra.Command {
 	var templateIDFlag int32
 	var name string
 	var shipmentTime string
+	var compareField string
+	var skipFwTypeCheck bool
 	var wait, noWait bool
 	var waitTimeout time.Duration
 	var verbose bool
@@ -240,6 +242,8 @@ func shipmentDeployCmd() *cobra.Command {
 				FirmwareInfo:             upload.FirmwareInfo,
 				DeviceIDs:                deviceIDs32(devices),
 				ShipmentTime:             shipmentTime,
+				SkipFwTypeCheck:          skipFwTypeCheck,
+				CompareField:             compareField,
 			}
 			s, err := client.CreateShipment(req)
 			if err != nil {
@@ -267,6 +271,8 @@ func shipmentDeployCmd() *cobra.Command {
 	cmd.Flags().Int32Var(&templateIDFlag, "template-id", 0, "Template ID to cross-check against the resolved devices")
 	cmd.Flags().StringVar(&name, "name", "", "Shipment name (auto-generated if omitted)")
 	cmd.Flags().StringVar(&shipmentTime, "shipment-time", "", "ANY|NIGHT|MORNING|AFTERNOON|EVENING (default ANY)")
+	cmd.Flags().BoolVar(&skipFwTypeCheck, "skip-fw-type-check", false, "Bypass the device/template firmware-type compatibility check")
+	cmd.Flags().StringVar(&compareField, "compare-field", "", "NO_CONDITION|BUILD_DATE_DIFFERS|EARLIER_BUILD_DATE|LATEST_FIRMWARE_VERSION|LATEST_BLYNK_VERSION (default BUILD_DATE_DIFFERS)")
 	cmd.Flags().BoolVar(&wait, "wait", false, "Poll until the rollout finishes (default on for a single device)")
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Don't poll, return immediately after creating the shipment")
 	cmd.Flags().DurationVar(&waitTimeout, "wait-timeout", 15*time.Minute, "Max time to wait for rollout completion")
