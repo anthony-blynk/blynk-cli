@@ -278,13 +278,15 @@ func deviceGetCmd() *cobra.Command {
 	var idFlag string
 	var reveal bool
 
-	cmd := &cobra.Command{
-		Use:   "get",
+	var cmd *cobra.Command
+	cmd = &cobra.Command{
+		Use:   "get [id]",
 		Short: "Show a device's details, including live online status",
-		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			if idFlag == "" {
-				return fmt.Errorf("--id is required")
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			idFlag, err := resolveIdentifier(args, cmd.Flags().Changed("id"), idFlag, "id")
+			if err != nil {
+				return err
 			}
 
 			client, err := requireClient()
@@ -338,7 +340,7 @@ func deviceGetCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&idFlag, "id", "", "Device ID or name (required)")
+	cmd.Flags().StringVar(&idFlag, "id", "", "Device ID or name")
 	cmd.Flags().BoolVar(&reveal, "reveal", false, "Show the device's auth token")
 	return cmd
 }

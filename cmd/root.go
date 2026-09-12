@@ -4,6 +4,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/anthony-blynk/blynk-cli/internal/api"
 	"github.com/anthony-blynk/blynk-cli/internal/config"
@@ -96,4 +97,53 @@ func loadConfig() (*config.Config, error) {
 // printErr writes a user-facing error to stderr.
 func printErr(err error) {
 	fmt.Fprintln(os.Stderr, "Error:", err)
+}
+
+// resolveIdentifier reconciles a bare positional argument with a flag that
+// identifies the same single resource — every blynk-cli command that
+// identifies exactly one resource (unlike e.g. a future `tag assign
+// --tag-id --device-id`, which genuinely needs two and would be ambiguous
+// as positional args) accepts either its flag or a positional argument,
+// never both (unless they agree) and never neither.
+func resolveIdentifier(args []string, flagChanged bool, flagValue, flagName string) (string, error) {
+	switch {
+	case len(args) == 1 && flagChanged:
+		if args[0] != flagValue {
+			return "", fmt.Errorf("both a positional argument (%q) and --%s (%q) were given; use only one", args[0], flagName, flagValue)
+		}
+		return flagValue, nil
+	case len(args) == 1:
+		return args[0], nil
+	case flagChanged:
+		return flagValue, nil
+	default:
+		return "", fmt.Errorf("--%s or a positional argument is required", flagName)
+	}
+}
+
+// resolveIdentifierInt64 is resolveIdentifier for int64-flagged commands
+// (e.g. shipment ids), which have no name-resolution path so the value must
+// parse cleanly as an integer either way.
+func resolveIdentifierInt64(args []string, flagChanged bool, flagValue int64, flagName string) (int64, error) {
+	switch {
+	case len(args) == 1 && flagChanged:
+		parsed, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q", flagName, args[0])
+		}
+		if parsed != flagValue {
+			return 0, fmt.Errorf("both a positional argument (%d) and --%s (%d) were given; use only one", parsed, flagName, flagValue)
+		}
+		return flagValue, nil
+	case len(args) == 1:
+		parsed, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q", flagName, args[0])
+		}
+		return parsed, nil
+	case flagChanged:
+		return flagValue, nil
+	default:
+		return 0, fmt.Errorf("--%s or a positional argument is required", flagName)
+	}
 }

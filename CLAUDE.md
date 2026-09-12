@@ -56,11 +56,31 @@ Persistent/global flags on every command:
 -y, --yes                Skip confirmation prompts
 ```
 
-All resource identifiers are **flags**, never positional args (`--id`,
-`--device-id`, `--org-id`, etc.) — this mirrors the actual Platform API, which
-takes every identifier as a query parameter rather than a path segment. This
-also disambiguates commands needing two IDs (e.g. future `tag assign
---tag-id --device-id`).
+**Revised 2026-09-12** (originally "flags only, never positional" — see
+below for why that changed): a command that identifies **exactly one**
+resource accepts either its flag (`--id`, `--name`, etc.) or a single bare
+positional argument — never both unless they agree, never neither. A
+command needing **two or more** identifiers (e.g. a future `tag assign
+--tag-id --device-id`) stays flag-only, since two bare positional args
+would be ambiguous about which is which. This mirrors `kubectl get pod
+<name> --namespace=x`: positional for the one thing being identified, flags
+for everything else/qualifiers.
+
+Implemented via `resolveIdentifier`/`resolveIdentifierInt64` in
+`cmd/root.go` — every single-identifier command's `Args` is
+`cobra.MaximumNArgs(1)`, and its `RunE` calls one of these instead of
+reading the flag variable directly. Apply this to any new single-identifier
+command; don't reintroduce `cmd.MarkFlagRequired(...)` for an identifier,
+since that would make the flag mandatory again even when a positional arg
+was given.
+
+Original rationale, now superseded for single-identifier commands but
+still the reason multi-identifier ones stay flag-only: this mirrors the
+actual Platform API, which takes every identifier as a query parameter
+rather than a path segment.
+
+`profile show`/`use`/`remove`/`rename` already took positional args from
+the start (they predate this note) and didn't need any change.
 
 ## Auth & profiles (build first — everything else depends on it)
 

@@ -61,12 +61,17 @@ func shipmentListCmd() *cobra.Command {
 }
 
 func shipmentGetCmd() *cobra.Command {
-	var id int64
-	cmd := &cobra.Command{
-		Use:   "get",
+	var idFlag int64
+	var cmd *cobra.Command
+	cmd = &cobra.Command{
+		Use:   "get [id]",
 		Short: "Show a shipment's details",
-		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			id, err := resolveIdentifierInt64(args, cmd.Flags().Changed("id"), idFlag, "id")
+			if err != nil {
+				return err
+			}
 			client, err := requireClient()
 			if err != nil {
 				return err
@@ -78,21 +83,25 @@ func shipmentGetCmd() *cobra.Command {
 			return output.Render(os.Stdout, flagOutput, s, shipmentTable(s))
 		},
 	}
-	cmd.Flags().Int64Var(&id, "id", 0, "Shipment ID (required)")
-	cmd.MarkFlagRequired("id")
+	cmd.Flags().Int64Var(&idFlag, "id", 0, "Shipment ID")
 	return cmd
 }
 
 func shipmentStopCmd() *cobra.Command {
-	var id int64
-	cmd := &cobra.Command{
-		Use:   "stop",
+	var idFlag int64
+	var cmd *cobra.Command
+	cmd = &cobra.Command{
+		Use:   "stop [id]",
 		Short: "Stop a running or paused shipment",
 		Long: "Stop a running or paused shipment. The Platform API exposes a single " +
 			"stop action (no separate pause/resume): only RUN or PAUSE shipments " +
 			"can be stopped, and there is no way to resume one afterwards.",
-		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			id, err := resolveIdentifierInt64(args, cmd.Flags().Changed("id"), idFlag, "id")
+			if err != nil {
+				return err
+			}
 			client, err := requireClient()
 			if err != nil {
 				return err
@@ -105,19 +114,23 @@ func shipmentStopCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().Int64Var(&id, "id", 0, "Shipment ID (required)")
-	cmd.MarkFlagRequired("id")
+	cmd.Flags().Int64Var(&idFlag, "id", 0, "Shipment ID")
 	return cmd
 }
 
 func shipmentDeleteCmd() *cobra.Command {
-	var id int64
+	var idFlag int64
 	var force bool
-	cmd := &cobra.Command{
-		Use:   "delete",
+	var cmd *cobra.Command
+	cmd = &cobra.Command{
+		Use:   "delete [id]",
 		Short: "Delete a finished or cancelled shipment",
-		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			id, err := resolveIdentifierInt64(args, cmd.Flags().Changed("id"), idFlag, "id")
+			if err != nil {
+				return err
+			}
 			if !flagYes && !force {
 				if !confirm(fmt.Sprintf("Delete shipment %d?", id)) {
 					fmt.Println("Cancelled.")
@@ -135,9 +148,8 @@ func shipmentDeleteCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().Int64Var(&id, "id", 0, "Shipment ID (required)")
+	cmd.Flags().Int64Var(&idFlag, "id", 0, "Shipment ID")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
-	cmd.MarkFlagRequired("id")
 	return cmd
 }
 
