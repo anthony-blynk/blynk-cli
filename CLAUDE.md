@@ -366,6 +366,35 @@ blynk-cli/
 in place rather than creating a second file when the `device` command group
 is built.
 
+## Testing
+
+`go test ./...` runs the unit suite (fast, no network/credentials needed):
+- `internal/config`: profile CRUD, prefix/substring resolution, the full
+  5-tier precedence order (using `t.Chdir`/`t.Setenv`, Go 1.24+), UTF-8 BOM
+  stripping for both `config.yaml` and `.blynk-profile`.
+- `internal/api`: JSON schema decode tests, several using **real captured
+  response bodies from live QA testing** (not synthetic) — e.g. the full
+  `Shipment` fixture from the docker-compose.yml/Nvidia ORIN investigation
+  (`shipments_test.go`), and the nested `{"error":{"message"}}` body that
+  broke error parsing the first time it was hit for real (`client_test.go`).
+  When you discover another live schema surprise, prefer adding it here as a
+  fixture over just fixing the struct — it's what caught the `Organization`
+  `address`/`id` bugs early once written.
+- `internal/output`: table alignment, JSON/YAML/table dispatch (100% covered).
+- `cmd`: pure logic (device-token parsing, auto-naming, byte formatting,
+  `--wait` stage inference) plus a mocked-HTTP-server test of
+  `resolveDevices`/`resolveDeviceToken` (numeric id, exact-name match,
+  ambiguous names, mixed-template hard error) via `httptest.NewTLSServer`.
+
+`internal/api/integration_test.go` holds a small **opt-in, read-only**
+integration suite that hits a real server — skipped by default, runs when
+`BLYNK_TEST_SERVER`/`BLYNK_TEST_TOKEN` (a static token) are set:
+```
+BLYNK_TEST_SERVER=fra.blynk-qa.com BLYNK_TEST_TOKEN=... go test ./internal/api/... -run Integration -v
+```
+Deliberately limited to read-only calls (`whoami`, `shipment list`) — it
+must never create/mutate anything, since it can run against a real org.
+
 ## Also designed but NOT being built yet
 
 Full command-tree sketch exists for: `org`, `device`, `datastream`,
