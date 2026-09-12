@@ -1,16 +1,25 @@
 package api
 
+// Address is the nested address object on an Organization.
+type Address struct {
+	FullAddress string `json:"fullAddress"`
+	Country     string `json:"country"`
+	City        string `json:"city"`
+	State       string `json:"state"`
+	Zip         string `json:"zip"`
+}
+
 // Organization is the response schema for
 // GET /api/v1/organization/profile and GET /api/v1/organization.
 type Organization struct {
-	ID             int64  `json:"id"`
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-	TZ             string `json:"tz"`
-	UnitSystem     string `json:"unitSystem"`
-	PhoneNumber    string `json:"phoneNumber"`
-	Address        string `json:"address"`
-	LastModifiedTs int64  `json:"lastModifiedTs"`
+	ID             int32    `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	TZ             string   `json:"tz"`
+	UnitSystem     string   `json:"unitSystem"`
+	PhoneNumber    string   `json:"phoneNumber"`
+	Address        *Address `json:"address"`
+	LastModifiedTs int64    `json:"lastModifiedTs"`
 }
 
 // OrganizationProfile calls GET /api/v1/organization/profile, which resolves
