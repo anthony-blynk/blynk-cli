@@ -18,6 +18,13 @@ Everything else (device, org, template, tag, automation, webhook, user,
 provisioning, static-token, upload, oauth) is designed (see below) but not
 being implemented yet — don't scaffold those commands until asked.
 
+**Status: both are implemented** (`cmd/profile.go`, `cmd/auth.go`,
+`cmd/shipment.go`, `internal/api/{client,oauth,organization,devices,
+uploads,shipments}.go`, `internal/config/*`, `internal/output/table.go`).
+Per-OS config-file permission enforcement (chmod/icacls) was explicitly
+deferred — not implemented yet, still worth doing later per the "Storage"
+section below.
+
 ## Why Go
 
 Single static binary per OS via cross-compilation
@@ -151,17 +158,32 @@ before expiry. For `token` (static) profiles: send as-is, nothing to refresh.
 
 ## `shipment` command group (build second)
 
-Wraps the Blynk.Air OTA shipment + upload endpoints.
+Wraps the Blynk.Air OTA shipment + upload endpoints. **Verified against the
+live docs** (shipments.md, uploads.md, devices.md) before implementing — the
+real API is narrower than the original design in a few ways, noted inline
+below. Decisions on how to reconcile were made with the user on 2026-09-12;
+don't re-litigate them without a reason.
 
 ```
-shipment list        [--org-id] --page --size --all
+shipment list        [--org-id]
 shipment get          --id int
-shipment pause         --id int
-shipment resume         --id int
-shipment cancel          --id int
+shipment stop           --id int
 shipment delete           --id int [--force]
-shipment report            --id int --output csv
 ```
+
+Real API notes:
+- **No pagination on shipment list** (`--page`/`--size`/`--all` are global
+  flags but don't apply here — the endpoint just returns everything).
+- **No pause/resume** — only `PUT /shipment/stop` exists (valid from RUN or
+  PAUSE), and there's no way to resume a stopped/paused shipment afterwards.
+  So `shipment pause`/`resume`/`cancel` collapsed into one `shipment stop`.
+- **No report/export endpoint** — dropped `shipment report` entirely.
+  `shipment get -o json` exposes the same `shipmentProgress` counters anyone
+  building a CSV would need.
+- Template ID/name surface as `productId`/`productName` on the Shipment
+  object (not a separate `templateId` field) — Blynk's usual alphanumeric
+  template ids (`TMPL0X9F`) do **not** appear here; both `productId` (on
+  Shipment) and `templateId` (on Device) are plain `int32`.
 
 ### `shipment deploy` — the combined upload+create convenience command
 
@@ -172,109 +194,88 @@ separately call the uploads endpoint first.
 ```
 blynk shipment deploy \
   --file ./firmware-v2.3.1.bin \
-  (--device-ids 123,456 | --tag-id 42 | --all-devices) \
-  [--template-id TMPL0X9F]     \
+  --device-ids 123,456 \
+  [--template-id 421]         \
   [--name string]              \
-  [--version string]            \
-  [--rollout gradual|immediate]  \
+  [--shipment-time ANY|NIGHT|MORNING|AFTERNOON|EVENING] \
   [--wait] [--no-wait] [--wait-timeout 15m] [--verbose] \
-  [-y/--yes]
+  [--dry-run] [-y/--yes]
 ```
 
-**Device targeting is required and mutually exclusive** — exactly one of
-`--device-ids`, `--tag-id`, `--all-devices`. No silent default; refuse to run
-without one specified, since accidentally shipping to every device is the
-single most dangerous mistake this whole CLI can make.
+**`--tag-id`/`--all-devices` targeting was dropped** (decided 2026-09-12):
+`POST /shipment/create` only accepts an explicit `deviceIds` array — no
+tag or org/template-wide targeting server-side. Resolving a tag or
+"all devices" into a device-id list would require devices-list/by-tag API
+calls, which are out of scope until the `device` command group is built.
+`--device-ids` is the only targeting flag for now; revisit tag/all-devices
+once `device` exists.
 
-**Template ID resolution:**
-- `--device-ids` → template is **looked up automatically** per device (a
-  `device get` call returns `templateId`). If the given device IDs span
-  *different* templates, that's a hard error (a shipment is firmware for one
-  template — mixed templates means two shipments, not one).
-- If `--template-id` is *also* passed alongside `--device-ids`, it's checked
-  against what the device(s) actually report; a mismatch is a loud error, not
-  a silent override.
-- `--tag-id` / `--all-devices` → `--template-id` **stays required**, since
-  these can span many devices/templates and there's no single device to
-  infer it from.
+**`--version` and `--rollout gradual|immediate` were dropped**: neither maps
+to a real field. Firmware version comes from server-parsed `firmwareInfo`,
+not a client-supplied value. There's no gradual-vs-immediate concept in the
+schema — the closest real field is `shipmentTime` (ANY/NIGHT/MORNING/
+AFTERNOON/EVENING, a time-of-day schedule, default ANY), exposed as
+`--shipment-time`.
 
-**Name resolution** — `--name` is optional, auto-generated when omitted so
-the common single-device test case needs zero naming thought:
+**Template ID resolution** (unchanged from original design, now just
+single-path since tag/all-devices is gone): looked up automatically per
+device via `GET /device` (`templateId` field). Mixed templates across
+`--device-ids` is a hard error — a shipment targets one template. If
+`--template-id` is also passed, a mismatch against what the device(s)
+actually report is a loud error, not a silent override.
+
+**Name resolution** — `--name` is optional, auto-generated when omitted:
 - Single device: `<device-name> · <firmware-filename> · <timestamp>`
   → `boiler-3 · fw-2.3.1.bin · 2026-09-12 14:32`
-- Tag/all-devices: `<template-name> · <firmware-filename> · <timestamp>`
-- Timestamp included specifically to avoid name collisions (shipment names
-  must be unique) if the same test is re-run back to back.
+- Multiple `--device-ids`: `template <id> · <firmware-filename> · <timestamp>`
+- Timestamp avoids name collisions (shipment titles must be unique) on
+  back-to-back re-runs.
 
 **Confirmation prompt** before firing (unless `-y`/`--yes`), showing resolved
-device name/count and firmware file — this is the highest-blast-radius
-action in the tool, so no silent execution:
-```
-About to deploy fw-2.3.1.bin to 1 device (boiler-3, id 12345) as shipment
-"boiler-3 · fw-2.3.1.bin · 2026-09-12 14:32". Continue? [y/N]
-```
+device name/count and firmware file.
 
-**`--wait` — poll until the OTA rollout finishes:**
-The shipment API tracks per-device progress through states (initiated →
-notified → downloading → applied, plus failure/mismatch states) and the
-shipment reaches a terminal state once every device resolves.
-- **Default ON when targeting exactly one device** (the common test-on-one-
-  board case) — override with `--no-wait`.
-- **Default OFF for `--tag-id`/`--all-devices`** multi-device shipments —
-  opt in explicitly with `--wait`, since a large rollout may take a while.
-- Single device, `--wait`: stream one line per state transition, e.g.
-  ```
-    boiler-3: initiated
-    boiler-3: notified
-    boiler-3: downloading
-    boiler-3: applied ✓
+**`--wait` — poll until the rollout finishes:**
+There is **no per-device status endpoint** — only one aggregate
+`shipmentProgress` object per shipment, with running counts (int32) across
+all its devices: `started`, `requestSent`, `firmwareRequested`,
+`firmwareUploaded`, `firmwareUploadedToMobile`, `success`, plus failure
+counters `uploadFailure`, `firmwareTypeMismatch`, `downloadLimitReached`,
+`rollback`, `firmwareVersionMismatch`. The shipment's own `status` field
+(RUN/PAUSE/FINISH/CANCEL) says when it's done.
+- **Default ON for exactly one device**, default OFF otherwise — same as
+  originally designed.
+- Single device: infer a stage label from which counters have gone from 0 to
+  ≥1 (started → notified → firmware requested → firmware uploaded → success,
+  or one of the failure labels), print a line each time the stage advances.
+  There's no literal "downloading" state in the real API — dropped that
+  label rather than fabricate it.
+- Multi-device: tally line refreshed in place
+  (`Rolling out... N/total updated, F failed, P pending`); `--verbose` prints
+  the raw counters every tick instead.
+- Failure → non-zero exit, terminal line points at `shipment get --id`
+  (no report command to point to anymore).
+- `--wait-timeout` (default 15m) as originally designed.
 
-  ✓ Shipment 8843 complete — firmware applied successfully
-  ```
-- Multi-device, `--wait`: aggregate tally by default
-  (`Rolling out... 187/214 updated, 2 failed, 25 pending`), full per-device
-  breakdown with `--verbose`.
-- Failure → non-zero exit code, terminal line shows the failure reason,
-  points at `shipment report --id` for details.
-- `--wait-timeout` (default ~15m) so one stuck device doesn't hang the CLI
-  forever — print whatever state was reached and exit non-zero on timeout.
-
-**`--dry-run`** (not yet fully speced) — should resolve the device-targeting
-flag into an actual device count/list and print it without uploading or
-creating anything, for double-checking a tag/device-id list before commit.
+**`--dry-run`**: resolves `--device-ids` into real device names/templates
+and prints them without uploading or creating anything.
 
 ### Example end-to-end run (single device, the common case)
 
 ```
 $ blynk shipment deploy --file ./fw-2.3.1.bin --device-ids 12345
-✓ Resolved device 12345 → template TMPL0X9F (Boiler Controller v2)
-✓ Uploaded fw-2.3.1.bin (1.2 MB)
-About to deploy fw-2.3.1.bin to 1 device (boiler-3, id 12345) as shipment
+Resolved device 12345 → template 421 (boiler-3)
+About to deploy fw-2.3.1.bin to 1 device(s) (boiler-3, id 12345) as shipment
 "boiler-3 · fw-2.3.1.bin · 2026-09-12 14:32". Continue? [y/N] y
+✓ Uploaded fw-2.3.1.bin (1.2 MB)
 ✓ Shipment 8843 created
 
-  boiler-3: initiated
   boiler-3: notified
-  boiler-3: downloading
+  boiler-3: firmware requested
+  boiler-3: firmware uploaded to device
   boiler-3: applied ✓
 
 ✓ Shipment 8843 complete — firmware applied successfully
 ```
-
-### ⚠ Open gap — verify against real API docs before implementing
-
-The exact JSON request/response schema for the **Shipments** and **Uploads**
-Platform API endpoints was **not** confirmed against the live OpenAPI spec
-during design (unlike `devices` and `organizations`, which were fetched and
-verified). Before writing `internal/api/shipments.go`, fetch and check:
-- https://docs.blynk.io/en/blynk.cloud/platform-https-api/shipments.md
-- https://docs.blynk.io/en/blynk.cloud/platform-https-api/uploads.md
-
-against the actual field names, upload flow (does upload return a file ID/
-URL that shipment create references? multipart vs. pre-signed URL?), and
-device-progress-status enum values, since those were inferred from adjacent
-docs (device shipment statuses, changelog mentions of gradual rollout) rather
-than the endpoint spec itself.
 
 ## Suggested project layout
 
@@ -282,27 +283,36 @@ than the endpoint spec itself.
 blynk-cli/
   main.go
   cmd/
-    root.go            # root command, global flags
+    root.go            # root command, global flags, requireClient()/resolveOptsFromFlags()
     profile.go          # profile add/list/use/remove/show/rename/switch
     auth.go              # auth login/token/whoami/logout
-    shipment.go           # shipment list/get/pause/resume/cancel/delete/report/deploy
+    shipment.go           # shipment list/get/stop/delete/deploy
+    prompt.go             # masked secret prompt, y/N confirm
+    picker.go              # profile switch's interactive fzf-style picker
   internal/
     config/
-      config.go          # ~/.blynk/config.yaml read/write, profile struct,
-                          # permission enforcement (per-OS)
+      config.go          # ~/.blynk/config.yaml read/write, Profile/Config types
+      resolve.go           # the 5-tier profile resolution order + prefix/substring matching
+      token.go              # OAuth2 token cache/refresh bridge to internal/api
+                          # (permission enforcement per-OS: not implemented yet, deferred)
     api/
       client.go           # shared HTTP client: base URL from profile, bearer
                           # token injection, error unwrapping
       oauth.go             # client-credentials token fetch + expiry tracking
-      shipments.go          # typed request/response structs + calls for
-                          # Shipments + Uploads endpoints
+      organization.go        # GET /organization/profile (whoami + profile-add validation)
+      devices.go             # minimal GET /device (name/templateId only, for shipment deploy)
+      uploads.go              # POST /api/upload (multipart firmware upload)
+      shipments.go             # typed request/response structs + calls for the Shipments endpoints
     output/
       table.go            # shared table/JSON/YAML renderer used by every command
 ```
 
 `internal/api` uses typed Go structs per resource (not raw maps) so
-`shipments.go` becomes the copy-paste template for `devices.go`,
-`templates.go`, etc. when those are built later.
+`shipments.go`/`devices.go` become the copy-paste template for the full
+`devices.go`, `templates.go`, etc. when those command groups are built later.
+`devices.go` today is intentionally minimal (id/name/templateId) — expand it
+in place rather than creating a second file when the `device` command group
+is built.
 
 ## Also designed but NOT being built yet
 
