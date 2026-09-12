@@ -64,9 +64,7 @@ ARM64 build is also published, for ARM-based Windows devices.)
 ## Usage
 
 ```bash
-# prompts for the client secret (masked input) if --client-secret is omitted
 blynk profile add my-org --server my-org.blynk.cloud --client-id <id> --use
-
 blynk auth whoami
 blynk device list
 blynk device get <id-or-name>
