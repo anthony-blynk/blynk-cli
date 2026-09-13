@@ -129,3 +129,50 @@ func TestSearchUsersSendsQuery(t *testing.T) {
 		t.Errorf("users = %+v", users)
 	}
 }
+
+func TestInviteUserSendsRequestBody(t *testing.T) {
+	client := mockAPIServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.Method, http.MethodPost; got != want {
+			t.Errorf("method = %q, want %q", got, want)
+		}
+		if got, want := r.URL.Path, "/api/v1/organization/users/invite"; got != want {
+			t.Errorf("path = %q, want %q", got, want)
+		}
+		var body InviteUserRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body.Email != "new@blynk.cc" || body.Name != "New Person" || body.RoleID != 2 {
+			t.Errorf("body = %+v", body)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(UserDetails{
+			User:   User{ID: 999, Name: "New Person", Email: "new@blynk.cc", RoleID: 2},
+			Status: "Pending",
+		})
+	})
+
+	u, err := client.InviteUser(InviteUserRequest{Email: "new@blynk.cc", Name: "New Person", RoleID: 2})
+	if err != nil {
+		t.Fatalf("InviteUser: %v", err)
+	}
+	if u.ID != 999 || u.Status != "Pending" {
+		t.Errorf("UserDetails = %+v", u)
+	}
+}
+
+func TestInviteUserOmitsZeroOrgID(t *testing.T) {
+	client := mockAPIServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var m map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+			t.Fatal(err)
+		}
+		if _, present := m["orgId"]; present {
+			t.Error("orgId should be omitted from the request body when 0")
+		}
+		json.NewEncoder(w).Encode(UserDetails{})
+	})
+	if _, err := client.InviteUser(InviteUserRequest{Email: "a@b.com", Name: "n", RoleID: 1}); err != nil {
+		t.Fatalf("InviteUser: %v", err)
+	}
+}

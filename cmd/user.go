@@ -14,7 +14,7 @@ import (
 
 var userCmd = &cobra.Command{
 	Use:   "user",
-	Short: "Inspect users",
+	Short: "Inspect and invite users",
 }
 
 func init() {
@@ -22,6 +22,7 @@ func init() {
 	userCmd.AddCommand(
 		userListCmd(),
 		userGetCmd(),
+		userInviteCmd(),
 	)
 }
 
@@ -112,6 +113,58 @@ func userGetCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&idFlag, "id", "", "User ID, name, or email")
+	return cmd
+}
+
+func userInviteCmd() *cobra.Command {
+	var email, name, locale string
+	var roleID int32
+
+	cmd := &cobra.Command{
+		Use:   "invite",
+		Short: "Invite a new user to the organization by email",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if email == "" {
+				return fmt.Errorf("--email is required")
+			}
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+			if roleID == 0 {
+				return fmt.Errorf("--role-id is required")
+			}
+
+			if !confirm(fmt.Sprintf("Invite %s <%s> to the organization with role id %d?", name, email, roleID)) {
+				fmt.Println("Cancelled.")
+				return nil
+			}
+
+			client, err := requireClient()
+			if err != nil {
+				return err
+			}
+
+			u, err := client.InviteUser(api.InviteUserRequest{
+				Email:  email,
+				Name:   name,
+				RoleID: roleID,
+				OrgID:  flagOrgID,
+				Locale: locale,
+			})
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("✓ Invited %s <%s> (user id %d, status %s)\n", u.Name, u.Email, u.ID, u.Status)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&email, "email", "", "Email address to invite (required)")
+	cmd.Flags().StringVar(&name, "name", "", "Name for the invited user (required)")
+	cmd.Flags().Int32Var(&roleID, "role-id", 0, "Role ID to assign (required — no lookup-by-name is available, see CLAUDE.md)")
+	cmd.Flags().StringVar(&locale, "locale", "", "Locale for the invite (optional)")
 	return cmd
 }
 

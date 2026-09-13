@@ -362,7 +362,7 @@ blynk-cli/
     auth.go              # auth login/token/whoami/logout
     shipment.go           # shipment list/get/stop/delete/deploy
     device.go              # device list/get (minimal — online status + firmware version)
-    user.go                 # user list/get (minimal)
+    user.go                 # user list/get/invite (minimal)
     prompt.go             # masked secret prompt, y/N confirm
     picker.go              # profile switch's interactive fzf-style picker
   internal/
@@ -510,13 +510,14 @@ auth token before this was caught (fixed same day as `--online`, via the
 
 ## `user` command group (minimal — added 2026-09-13)
 
-Same pattern as `device`: read-only, added on request, not the full
-command-tree sketch (no `create`/`invite`/`role update`, though the API
-supports all three — see below).
+Started read-only (`list`/`get`), like `device`; `invite` was added the
+same day once the user asked for it directly. `create`/`create-in-org`/
+`role update` are still not implemented — see below.
 
 ```
-user list  [--include-sub-org-users] [--page] [--size] [--all]
-user get    <id-or-name-or-email>
+user list    [--include-sub-org-users] [--page] [--size] [--all]
+user get      <id-or-name-or-email>
+user invite    --email --name --role-id [--org-id] [--locale] [-y/--yes]
 ```
 
 Verified against the live docs before implementing:
@@ -540,13 +541,17 @@ Verified against the live docs before implementing:
   the docs don't confirm whether the search endpoint's `query` param
   indexes email (client-side matching handles it either way).
 
-**Not implemented, but available if asked**: `POST /users/create` /
-`/users/create-in-org` (new user, requires a `password`), `POST
-/users/invite` (invite by email, no password), `PUT /users/role` (change
-an existing user's role). All are real, mutating, non-trivial-blast-radius
-operations (creating accounts, granting roles) — treat them with the same
-confirmation-prompt care as `shipment deploy`/`profile remove` if building
-them, don't just wire them up bare.
+**`user invite`**: confirmation prompt before firing (unless `-y`), same
+pattern as `shipment deploy`/`profile remove` — inviting a real person to
+the org is a real, hard-to-silently-undo action. Requires `--role-id` as a
+raw number since (as above) there's no way to resolve a role name to an id
+either — the caller has to already know it.
+
+**Still not implemented, but available if asked**: `POST /users/create` /
+`/users/create-in-org` (new user, requires a `password` — a materially
+different/riskier operation than invite, which needs no password) and
+`PUT /users/role` (change an existing user's role). Same
+confirmation-prompt care applies if building these.
 
 ## Also designed but NOT being built yet
 
@@ -554,7 +559,7 @@ Full command-tree sketch exists for: `org`, `datastream`, `template`
 (+ nested `datastream`/`event`/`metafield`), `tag`, `automation`, `webhook`,
 `provision`/`static-token`, `upload`, `oauth`, the rest of `device` beyond
 `list`/`get` (create/edit/delete/datastream/tag-assignment/etc.), and the
-rest of `user` beyond `list`/`get` (`create`/`create-in-org`/`invite`/
+rest of `user` beyond `list`/`get`/`invite` (`create`/`create-in-org`/
 `role update`). Ask before scaffolding these.
 
 ## Environment

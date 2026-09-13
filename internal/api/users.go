@@ -78,3 +78,23 @@ func (c *Client) SearchUsers(query string) ([]User, error) {
 	}
 	return resp.Content, nil
 }
+
+// InviteUserRequest is the body of POST /organization/users/invite. Unlike
+// the create endpoints, invite requires no password — the invited user
+// sets their own on acceptance.
+type InviteUserRequest struct {
+	Email  string `json:"email"`
+	Name   string `json:"name"`
+	RoleID int32  `json:"roleId"`
+	OrgID  int64  `json:"orgId,omitempty"`
+	Locale string `json:"locale,omitempty"`
+}
+
+// InviteUser calls POST /api/v1/organization/users/invite.
+func (c *Client) InviteUser(req InviteUserRequest) (*UserDetails, error) {
+	var u UserDetails
+	if err := c.Post("/api/v1/organization/users/invite", nil, req, &u); err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
