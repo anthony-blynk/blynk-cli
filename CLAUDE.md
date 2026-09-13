@@ -13,15 +13,16 @@ sessions.
 
 ## Current scope (build this first)
 
-**`profile`/`auth`**, **`shipment`**, and now a **minimal `device`** group
-(`list`/`get` only — see below). Everything else (org, template, tag,
-automation, webhook, user, provisioning, static-token, upload, oauth) is
-designed (see below) but not being implemented yet — don't scaffold those
-commands until asked.
+**`profile`/`auth`**, **`shipment`**, and now minimal **`device`** and
+**`user`** groups (`list`/`get` only on both — see below). Everything else
+(org, template, tag, automation, webhook, provisioning, static-token,
+upload, oauth) is designed (see below) but not being implemented yet —
+don't scaffold those commands until asked.
 
 **Status: implemented** (`cmd/profile.go`, `cmd/auth.go`, `cmd/shipment.go`,
-`cmd/device.go`, `internal/api/{client,oauth,organization,devices,uploads,
-shipments}.go`, `internal/config/*`, `internal/output/table.go`).
+`cmd/device.go`, `cmd/user.go`, `internal/api/{client,oauth,organization,
+devices,templates,users,uploads,shipments}.go`, `internal/config/*`,
+`internal/output/table.go`).
 Per-OS config-file permission enforcement (chmod/icacls) was explicitly
 deferred — not implemented yet, still worth doing later per the "Storage"
 section below.
@@ -361,6 +362,7 @@ blynk-cli/
     auth.go              # auth login/token/whoami/logout
     shipment.go           # shipment list/get/stop/delete/deploy
     device.go              # device list/get (minimal — online status + firmware version)
+    user.go                 # user list/get (minimal)
     prompt.go             # masked secret prompt, y/N confirm
     picker.go              # profile switch's interactive fzf-style picker
   internal/
@@ -376,6 +378,7 @@ blynk-cli/
       organization.go        # GET /organization/profile (whoami + profile-add validation)
       devices.go             # GET /device, /devices (list), /search/devices, /device/online
       templates.go             # minimal GET /template, /templates (id<->name only, for device list/get)
+      users.go                 # GET /user, /users (list), /search/users (minimal — list/get only)
       uploads.go              # POST /api/upload (multipart firmware upload)
       shipments.go             # typed request/response structs + calls for the Shipments endpoints
     output/
@@ -505,13 +508,54 @@ single-device one, so its JSON output was leaking every listed device's
 auth token before this was caught (fixed same day as `--online`, via the
 `deviceListItem` wrapper type rather than rendering raw `[]api.Device`).
 
+## `user` command group (minimal — added 2026-09-13)
+
+Same pattern as `device`: read-only, added on request, not the full
+command-tree sketch (no `create`/`invite`/`role update`, though the API
+supports all three — see below).
+
+```
+user list  [--include-sub-org-users] [--page] [--size] [--all]
+user get    <id-or-name-or-email>
+```
+
+Verified against the live docs before implementing:
+- **`GET /organization/users` (list) has no `orgId` parameter at all** —
+  unlike `ListDevices`/`ListTemplates`, it's unconditionally scoped to the
+  caller's own org. `internal/api/users.go`'s `ListUsers` doesn't take an
+  orgID param; don't add one without re-checking the docs first.
+- **No endpoint resolves `roleId` to a role name for an arbitrary user**
+  under org/client-scoped auth — there's no roles-list endpoint at all, and
+  the one endpoint that *does* return a role name
+  (`GET /organization/user/profile`, a `UserProfile` schema with a nested
+  `role: {id, name, permissions}`) explicitly requires **user-scoped
+  auth**, which this CLI doesn't use (it authenticates via OAuth2
+  client-credentials or a static token, not a logged-in user session). So
+  unlike `device`/`shipment`'s template-name resolution, `user get`/`user
+  list` just show the raw numeric `role_id` — not a gap worth working
+  around client-side, since there's no data source for the name at all.
+- `user get`'s identifier resolution accepts a numeric id, a name, *or an
+  email* (`resolveUserToken` in `cmd/user.go`) — matches against both
+  `Name` and `Email` case-insensitively for the "exact match" tier, since
+  the docs don't confirm whether the search endpoint's `query` param
+  indexes email (client-side matching handles it either way).
+
+**Not implemented, but available if asked**: `POST /users/create` /
+`/users/create-in-org` (new user, requires a `password`), `POST
+/users/invite` (invite by email, no password), `PUT /users/role` (change
+an existing user's role). All are real, mutating, non-trivial-blast-radius
+operations (creating accounts, granting roles) — treat them with the same
+confirmation-prompt care as `shipment deploy`/`profile remove` if building
+them, don't just wire them up bare.
+
 ## Also designed but NOT being built yet
 
 Full command-tree sketch exists for: `org`, `datastream`, `template`
 (+ nested `datastream`/`event`/`metafield`), `tag`, `automation`, `webhook`,
-`user`, `provision`/`static-token`, `upload`, `oauth`, and the rest of
-`device` beyond `list`/`get` (create/edit/delete/datastream/tag-assignment/
-etc.). Ask before scaffolding these.
+`provision`/`static-token`, `upload`, `oauth`, the rest of `device` beyond
+`list`/`get` (create/edit/delete/datastream/tag-assignment/etc.), and the
+rest of `user` beyond `list`/`get` (`create`/`create-in-org`/`invite`/
+`role update`). Ask before scaffolding these.
 
 ## Environment
 
