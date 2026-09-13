@@ -180,7 +180,7 @@ func shipmentTable(s *api.Shipment) *output.Table {
 
 func shipmentDeployCmd() *cobra.Command {
 	var file string
-	var deviceIDsRaw string
+	var devicesRaw string
 	var templateIDFlag int32
 	var name string
 	var shipmentTime string
@@ -202,8 +202,8 @@ func shipmentDeployCmd() *cobra.Command {
 			if file == "" {
 				return fmt.Errorf("--file is required")
 			}
-			if deviceIDsRaw == "" {
-				return fmt.Errorf("--device-ids is required")
+			if devicesRaw == "" {
+				return fmt.Errorf("--devices is required")
 			}
 
 			client, err := requireClient()
@@ -211,7 +211,7 @@ func shipmentDeployCmd() *cobra.Command {
 				return err
 			}
 
-			devices, templateID, err := resolveDevices(client, deviceIDsRaw)
+			devices, templateID, err := resolveDevices(client, devicesRaw)
 			if err != nil {
 				return err
 			}
@@ -299,7 +299,7 @@ func shipmentDeployCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&file, "file", "", "Firmware file to upload (required)")
-	cmd.Flags().StringVar(&deviceIDsRaw, "device-ids", "", "Comma-separated device IDs or names to target (required)")
+	cmd.Flags().StringVar(&devicesRaw, "devices", "", "Comma-separated device IDs or names to target (required)")
 	cmd.Flags().Int32Var(&templateIDFlag, "template-id", 0, "Template ID to cross-check against the resolved devices")
 	cmd.Flags().StringVar(&name, "name", "", "Shipment name (auto-generated if omitted)")
 	cmd.Flags().StringVar(&shipmentTime, "shipment-time", "", "ANY|NIGHT|MORNING|AFTERNOON|EVENING (default ANY)")
@@ -315,7 +315,7 @@ func shipmentDeployCmd() *cobra.Command {
 	return cmd
 }
 
-// splitDeviceTokens splits --device-ids on commas; each token may be a
+// splitDeviceTokens splits --devices on commas; each token may be a
 // numeric device id or a device name (resolved via a live search).
 func splitDeviceTokens(raw string) ([]string, error) {
 	parts := strings.Split(raw, ",")
@@ -327,7 +327,7 @@ func splitDeviceTokens(raw string) ([]string, error) {
 		}
 	}
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("--device-ids must contain at least one device id or name")
+		return nil, fmt.Errorf("--devices must contain at least one device id or name")
 	}
 	return tokens, nil
 }
@@ -340,7 +340,7 @@ func deviceIDs32(devices []api.Device) []int32 {
 	return out
 }
 
-// resolveDeviceToken resolves one --device-ids token to a Device: a numeric
+// resolveDeviceToken resolves one --devices token to a Device: a numeric
 // token is looked up directly, anything else is treated as a device name
 // and resolved via the search endpoint (which must yield exactly one match,
 // preferring an exact case-insensitive name match over a substring one).
@@ -382,9 +382,9 @@ func deviceCandidates(devices []api.Device) string {
 	return strings.Join(labels, ", ")
 }
 
-// resolveDevices resolves every --device-ids token and confirms they all
+// resolveDevices resolves every --devices token and confirms they all
 // share one template — a shipment is firmware for one template, so mixed
-// templates across --device-ids is a hard error.
+// templates across --devices is a hard error.
 func resolveDevices(client *api.Client, raw string) ([]api.Device, int32, error) {
 	tokens, err := splitDeviceTokens(raw)
 	if err != nil {
@@ -403,7 +403,7 @@ func resolveDevices(client *api.Client, raw string) ([]api.Device, int32, error)
 	templateID := devices[0].TemplateID
 	for _, d := range devices[1:] {
 		if d.TemplateID != templateID {
-			return nil, 0, fmt.Errorf("--device-ids span different templates (device %d is template %d, device %d is template %d) — a shipment targets one template, split this into separate shipments", devices[0].ID, templateID, d.ID, d.TemplateID)
+			return nil, 0, fmt.Errorf("--devices span different templates (device %d is template %d, device %d is template %d) — a shipment targets one template, split this into separate shipments", devices[0].ID, templateID, d.ID, d.TemplateID)
 		}
 	}
 	return devices, templateID, nil

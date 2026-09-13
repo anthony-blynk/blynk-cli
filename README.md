@@ -68,7 +68,7 @@ blynk profile add my-org --server my-org.blynk.cloud --client-id <id> --use
 blynk auth whoami
 blynk device list
 blynk device get <id-or-name>
-blynk shipment deploy --file firmware.bin --device-ids 12345
+blynk shipment deploy --file firmware.bin --devices 12345
 ```
 
 Have a static access token instead of OAuth2 client credentials? Use

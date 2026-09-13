@@ -216,7 +216,7 @@ separately call the uploads endpoint first.
 ```
 blynk shipment deploy \
   --file ./firmware-v2.3.1.bin \
-  --device-ids 123,456 \
+  --devices 123,456 \
   [--template-id 421]         \
   [--name string]              \
   [--shipment-time ANY|NIGHT|MORNING|AFTERNOON|EVENING] \
@@ -273,10 +273,10 @@ this org ships container manifests as "firmware" to edge devices, and `.yml`/
 tag or org/template-wide targeting server-side. Resolving a tag or
 "all devices" into a device-id list would require devices-list/by-tag API
 calls, which are out of scope until the `device` command group is built.
-`--device-ids` is the only targeting flag for now; revisit tag/all-devices
+`--devices` is the only targeting flag for now; revisit tag/all-devices
 once `device` exists.
 
-**`--device-ids` accepts device names as well as numeric ids** (added
+**`--devices` accepts device names as well as numeric ids** (added
 2026-09-12, discovered live testing that device console labels aren't the
 numeric id the API needs): each comma-separated token is looked up directly
 if numeric, otherwise resolved via `GET /search/devices?query=` (added to
@@ -294,14 +294,14 @@ AFTERNOON/EVENING, a time-of-day schedule, default ANY), exposed as
 **Template ID resolution** (unchanged from original design, now just
 single-path since tag/all-devices is gone): looked up automatically per
 device via `GET /device` (`templateId` field). Mixed templates across
-`--device-ids` is a hard error — a shipment targets one template. If
+`--devices` is a hard error — a shipment targets one template. If
 `--template-id` is also passed, a mismatch against what the device(s)
 actually report is a loud error, not a silent override.
 
 **Name resolution** — `--name` is optional, auto-generated when omitted:
 - Single device: `<device-name> · <firmware-filename> · <timestamp>`
   → `boiler-3 · fw-2.3.1.bin · 2026-09-12 14:32`
-- Multiple `--device-ids`: `template <id> · <firmware-filename> · <timestamp>`
+- Multiple `--devices`: `template <id> · <firmware-filename> · <timestamp>`
 - Timestamp avoids name collisions (shipment titles must be unique) on
   back-to-back re-runs.
 
@@ -330,13 +330,13 @@ counters `uploadFailure`, `firmwareTypeMismatch`, `downloadLimitReached`,
   (no report command to point to anymore).
 - `--wait-timeout` (default 15m) as originally designed.
 
-**`--dry-run`**: resolves `--device-ids` into real device names/templates
+**`--dry-run`**: resolves `--devices` into real device names/templates
 and prints them without uploading or creating anything.
 
 ### Example end-to-end run (single device, the common case)
 
 ```
-$ blynk shipment deploy --file ./fw-2.3.1.bin --device-ids 12345
+$ blynk shipment deploy --file ./fw-2.3.1.bin --devices 12345
 Resolved device 12345 → template 421 (boiler-3)
 About to deploy fw-2.3.1.bin to 1 device(s) (boiler-3, id 12345) as shipment
 "boiler-3 · fw-2.3.1.bin · 2026-09-12 14:32". Continue? [y/N] y
@@ -491,7 +491,7 @@ Verified against the live docs before implementing:
 
 `device get --id` accepts a device name as well as a numeric id (reuses
 `resolveDeviceToken` from `cmd/shipment.go` — same search-based resolution
-`shipment deploy --device-ids` uses), then always re-fetches via
+`shipment deploy --devices` uses), then always re-fetches via
 `GetDevice` for a consistent full schema regardless of which path resolved
 it, then calls `IsOnline` separately.
 
