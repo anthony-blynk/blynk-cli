@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   goreleaser:
-    runs-on: ubuntu-latest
+    # macOS so the darwin builds can use cgo (CoreBluetooth, for BLE
+    # provisioning); Windows/Linux are cross-compiled without cgo from here.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:

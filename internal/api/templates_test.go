@@ -16,6 +16,19 @@ func TestTemplateUnmarshal(t *testing.T) {
 	}
 }
 
+// Real response body from GET /organization/template on fra1 (2026-11-03):
+// the alphanumeric id comes back as a templateIds array, not a scalar.
+func TestTemplateUnmarshalTemplateIDs(t *testing.T) {
+	body := `{"id":349155,"templateIds":["TMPL4TuK3CZDs"],"orgId":88287,"name":"Modbus Gateway","boardType":"Other","connectionType":"ETHERNET","createdAt":1792412991733}`
+	var tpl Template
+	if err := json.Unmarshal([]byte(body), &tpl); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if tpl.ID != 349155 || len(tpl.TemplateIDs) != 1 || tpl.TemplateIDs[0] != "TMPL4TuK3CZDs" {
+		t.Errorf("Template = %+v", tpl)
+	}
+}
+
 func TestTemplatePageUnmarshal(t *testing.T) {
 	var page templatePage
 	body := `{"content":[{"id":1,"name":"a"},{"id":2,"name":"b"}],"totalElements":2}`

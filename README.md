@@ -68,8 +68,13 @@ blynk profile add my-org --server my-org.blynk.cloud --client-id <id> --use
 blynk auth whoami
 blynk device list
 blynk device get <id-or-name>
+blynk device provision --template <id-or-name>   # pair over Bluetooth, no phone needed
 blynk shipment deploy --file firmware.bin --devices 12345
 ```
+
+`device provision` needs Bluetooth on the machine. Release binaries support
+it on Windows, macOS and Linux (BlueZ). A macOS binary you build yourself
+needs `CGO_ENABLED=1` (the default on a Mac) for it.
 
 Have a static access token instead of OAuth2 client credentials? Use
 `--token <value>` in place of `--client-id`/`--client-secret`.

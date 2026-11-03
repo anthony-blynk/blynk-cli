@@ -14,7 +14,8 @@ sessions.
 ## Current scope (build this first)
 
 **`profile`/`auth`**, **`shipment`**, and now minimal **`device`** and
-**`user`** groups (`list`/`get` only on both — see below). Everything else
+**`user`** groups (`list`/`get` on both, plus `device provision` and
+`user invite` — see below). Everything else
 (org, template, tag, automation, webhook, provisioning, static-token,
 upload, oauth) is designed (see below) but not being implemented yet —
 don't scaffold those commands until asked.
@@ -362,6 +363,7 @@ blynk-cli/
     auth.go              # auth login/token/whoami/logout
     shipment.go           # shipment list/get/stop/delete/deploy
     device.go              # device list/get (minimal — online status + firmware version)
+    device_provision.go    # device provision: create device + pair over BLE
     user.go                 # user list/get/invite (minimal)
     prompt.go             # masked secret prompt, y/N confirm
     picker.go              # profile switch's interactive fzf-style picker
@@ -381,6 +383,10 @@ blynk-cli/
       users.go                 # GET /user, /users (list), /search/users (minimal — list/get only)
       uploads.go              # POST /api/upload (multipart firmware upload)
       shipments.go             # typed request/response structs + calls for the Shipments endpoints
+    ble/
+      ble.go              # BLE provisioning protocol (pure Go, unit-tested)
+      transport.go         # tinygo.org/x/bluetooth radio (//go:build !darwin || cgo)
+      transport_unsupported.go  # macOS without cgo: Scan/Dial return ErrUnsupported
     output/
       table.go            # shared table/JSON/YAML renderer used by every command
 ```
@@ -407,6 +413,9 @@ is built.
   fixture over just fixing the struct — it's what caught the `Organization`
   `address`/`id` bugs early once written.
 - `internal/output`: table alignment, JSON/YAML/table dispatch (100% covered).
+- `internal/ble`: the provisioning protocol against a fake device, using the
+  real EG5120 exchange as replies (set_fail/net_fail, MTU limit, timeouts).
+  The radio itself can only be tested by hand.
 - `cmd`: pure logic (device-token parsing, auto-naming, byte formatting,
   `--wait` stage inference) plus a mocked-HTTP-server test of
   `resolveDevices`/`resolveDeviceToken` (numeric id, exact-name match,
@@ -426,7 +435,9 @@ must never create/mutate anything, since it can run against a real org.
 Added on request, scoped narrowly to two things: checking whether a device
 is online, and seeing its firmware version. Not the full device command
 group from the original design sketch (no create/edit/delete/datastream/
-tag-assignment/etc.) — ask before expanding this beyond `list`/`get`.
+tag-assignment/etc.) — ask before expanding this beyond `list`/`get`/
+`provision` (`provision` creates devices, but only as part of pairing;
+there's still no standalone `device create`).
 
 ```
 device list  [--org-id] [--include-sub-org-devices] [--page] [--size] [--all] [--online] [--reveal] [--template <id-or-name>]
@@ -507,6 +518,48 @@ just `get`** — the list endpoint returns `token` per device same as the
 single-device one, so its JSON output was leaking every listed device's
 auth token before this was caught (fixed same day as `--online`, via the
 `deviceListItem` wrapper type rather than rendering raw `[]api.Device`).
+
+## `device provision` — pair over BLE without the mobile app (added 2026-11-03)
+
+```
+device provision --template <id-or-name> [--name] [--ble-name] [--wifi-ssid] [--wifi-pass] [-y]
+device provision --device <id-or-name> [--ble-name] ...      # pair an existing device / retry
+```
+
+Plays the Blynk app's side of BLE provisioning (protocol:
+`C:\Blynk\blynk-edge-agent\docs\blynk-ble-provisioning-protocol.md`):
+scan for the `95e30001-…` service → connect → `info` → confirm → create the
+device → `set` {token, host = profile server, templateId} → `connect` →
+wait for `connected` → poll `IsOnline`. The token is never printed. Order
+matters: everything that can fail cheaply (template lookup, scan, connect,
+`info`, fixed-firmware template mismatch) happens **before** the device is
+created; a failure after creation prints a `--device <id>` retry hint
+instead of leaving the user to create a second device.
+- More than one device advertising is a hard error listing them (a Pi in
+  pairing mode was nearby during testing) — `--ble-name` picks one.
+- `templateId` goes in `set` **only for `fw_type: DYNAMIC`** firmware, as
+  the app does — older blynk-provisioning and Edgent ESP-IDF answer
+  `set_fail` to unknown keys.
+- The alphanumeric template id comes from `Template.TemplateIDs`
+  (`templateIds` array on `GET /organization/template`, verified live).
+  `POST /organization/device/create` takes `templateId` as a string; the
+  docs don't say which form; the `TMPL…` one works (confirmed live
+  2026-11-03: EG5120 provisioned as device 576305 on "Modbus Gateway").
+
+**Library: `tinygo.org/x/bluetooth` v0.17.0.** The user had found tinygo
+buggy years ago; a live test on 2026-11-03 paired the EG5120 from Windows
+end to end. Gotcha: Windows takes ~11–16 s to bring the link up, longer
+than tinygo's 10 s default — hence `--connect-timeout` defaulting to 30 s.
+MTU was 517 (the `set` is ~110 bytes).
+
+**macOS needs cgo** (tinygo uses CoreBluetooth via `cbgo`); Windows (WinRT)
+and Linux (BlueZ/D-Bus) are pure Go. Decided with the user: build tags
+(`transport.go` is `!darwin || cgo`, `transport_unsupported.go` the rest)
+so `CGO_ENABLED=0` cross-builds of every target still work, **plus** the
+release runs on `macos-latest` with a separate cgo-enabled darwin build in
+`.goreleaser.yaml` so released Mac binaries do have BLE. CI's `darwin-cgo`
+job checks that path before tagging. Untested: the macOS Bluetooth
+permission prompt for a CLI binary (should attach to the terminal app).
 
 ## `user` command group (minimal — added 2026-09-13)
 
