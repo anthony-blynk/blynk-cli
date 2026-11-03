@@ -38,9 +38,30 @@ jobs:
       - name: Test
         run: go test ./... -v
 
+  darwin-cgo:
+    # The release's darwin builds use cgo (BLE provisioning needs
+    # CoreBluetooth); check both architectures build that way before a tag.
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build for darwin/${{ matrix.goarch }} with cgo
+        env:
+          CGO_ENABLED: 1
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -o /tmp/blynk .
+
   cross-compile:
     # Confirms every release target actually builds, without running
     # goreleaser itself here — the release workflow does that on tag push.
+    # darwin here has no cgo, so it gets internal/ble's "unsupported" stub.
     runs-on: ubuntu-latest
     strategy:
       matrix:

@@ -12,6 +12,10 @@ import (
 type Template struct {
 	ID   int32  `json:"id"`
 	Name string `json:"name"`
+	// TemplateIDs holds the alphanumeric id(s) firmware is built with
+	// (e.g. "TMPL4TuK3CZDs") — the value devices report as
+	// hardwareInfo.templateId and the BLE provisioning protocol uses.
+	TemplateIDs []string `json:"templateIds"`
 }
 
 // GetTemplate calls GET /api/v1/organization/template.

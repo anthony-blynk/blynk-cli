@@ -109,3 +109,22 @@ func (c *Client) IsOnline(deviceID int64) (bool, error) {
 	}
 	return resp.Connected, nil
 }
+
+// CreateDeviceRequest is the body of POST /organization/device/create.
+// TemplateID is a string field; the docs don't say which form it takes, so
+// callers pass the alphanumeric id (Template.TemplateIDs, e.g. "TMPL...").
+type CreateDeviceRequest struct {
+	TemplateID string `json:"templateId"`
+	Name       string `json:"name"`
+	OrgID      int64  `json:"orgId,omitempty"`
+}
+
+// CreateDevice calls POST /api/v1/organization/device/create. The response
+// includes the new device's auth token.
+func (c *Client) CreateDevice(req CreateDeviceRequest) (*Device, error) {
+	var d Device
+	if err := c.Post("/api/v1/organization/device/create", nil, req, &d); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}

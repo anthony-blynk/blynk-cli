@@ -6,6 +6,10 @@ before:
   hooks:
     - go mod tidy
 
+# Two builds because BLE provisioning (internal/ble) needs cgo on macOS
+# (CoreBluetooth) but not on Windows/Linux. This config must run on a macOS
+# runner (see .github/workflows/release.yml); a cgo-less darwin build still
+# compiles, just without `device provision`.
 builds:
   - id: blynk
     binary: blynk
@@ -14,8 +18,23 @@ builds:
       - CGO_ENABLED=0
     goos:
       - windows
-      - darwin
       - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/anthony-blynk/blynk-cli/cmd.Version={{ .Version }}
+      - -X github.com/anthony-blynk/blynk-cli/cmd.Commit={{ .ShortCommit }}
+      - -X github.com/anthony-blynk/blynk-cli/cmd.Date={{ .Date }}
+
+  - id: blynk-darwin
+    binary: blynk
+    main: .
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - darwin
     goarch:
       - amd64
       - arm64

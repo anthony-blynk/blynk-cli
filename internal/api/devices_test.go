@@ -186,3 +186,34 @@ func TestListDevicesOmitsOrgIDWhenZero(t *testing.T) {
 		t.Fatalf("ListDevices: %v", err)
 	}
 }
+
+func TestCreateDeviceSendsBody(t *testing.T) {
+	client := mockAPIServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if got, want := r.URL.Path, "/api/v1/organization/device/create"; got != want {
+			t.Errorf("path = %q, want %q", got, want)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["templateId"] != "TMPL4TuK3CZDs" || body["name"] != "Modbus Gateway F8XQ" {
+			t.Errorf("body = %v", body)
+		}
+		if _, present := body["orgId"]; present {
+			t.Error("orgId should be omitted when 0")
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(Device{ID: 576285, Name: "Modbus Gateway F8XQ", TemplateID: 349155, Token: "fakeTokenFakeTokenFakeTokenFake0"})
+	})
+
+	d, err := client.CreateDevice(CreateDeviceRequest{TemplateID: "TMPL4TuK3CZDs", Name: "Modbus Gateway F8XQ"})
+	if err != nil {
+		t.Fatalf("CreateDevice: %v", err)
+	}
+	if d.ID != 576285 || d.Token != "fakeTokenFakeTokenFakeTokenFake0" {
+		t.Errorf("device = %+v", d)
+	}
+}

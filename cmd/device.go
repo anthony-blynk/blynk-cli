@@ -14,7 +14,7 @@ import (
 
 var deviceCmd = &cobra.Command{
 	Use:   "device",
-	Short: "Inspect devices",
+	Short: "Inspect and provision devices",
 }
 
 func init() {
@@ -22,6 +22,7 @@ func init() {
 	deviceCmd.AddCommand(
 		deviceListCmd(),
 		deviceGetCmd(),
+		deviceProvisionCmd(),
 	)
 }
 
