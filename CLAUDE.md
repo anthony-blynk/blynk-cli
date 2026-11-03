@@ -563,7 +563,9 @@ MTU was 517 (the `set` is ~110 bytes).
 and Linux (BlueZ/D-Bus) are pure Go. Decided with the user: build tags
 (`transport.go` is `!darwin || cgo`, `transport_unsupported.go` the rest)
 so `CGO_ENABLED=0` cross-builds of every target still work, **plus** the
-release runs on `macos-latest` with a separate cgo-enabled darwin build in
+release runs on `macos-15-intel` (not `macos-latest`: the arm64 runners
+were at capacity and v0.3.0's release job never started, twice — v0.3.0 is
+a tag with no release; v0.3.1 was the first) with a separate cgo-enabled darwin build in
 `.goreleaser.yaml` so released Mac binaries do have BLE. CI's `darwin-cgo`
 job checks that path before tagging. Untested: the macOS Bluetooth
 permission prompt for a CLI binary (should attach to the terminal app).
