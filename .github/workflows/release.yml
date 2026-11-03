@@ -12,7 +12,10 @@ jobs:
   goreleaser:
     # macOS so the darwin builds can use cgo (CoreBluetooth, for BLE
     # provisioning); Windows/Linux are cross-compiled without cgo from here.
-    runs-on: macos-latest
+    # Intel rather than macos-latest (arm64): the v0.3.0 release never got
+    # an arm64 runner (GitHub capacity constraints), and an Intel Mac
+    # builds both darwin architectures with cgo just as well.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
         with:
