@@ -76,7 +76,7 @@ over Bluetooth, and waits for it to come online. The token is never printed.
 
 			fmt.Println("Scanning for devices in provisioning mode...")
 			scanCtx, cancel := context.WithTimeout(context.Background(), scanTimeout)
-			found, err := ble.Scan(scanCtx, bleName, 2*time.Second)
+			found, err := ble.Scan(scanCtx, bleName, 2*time.Second, nil)
 			cancel()
 			if err != nil {
 				return err
@@ -192,24 +192,39 @@ func deviceScanCmd() *cobra.Command {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), duration)
 			defer cancel()
+
+			// Table and -q output stream each device as it's first seen;
+			// JSON/YAML must be one document, so they wait for the end.
+			streaming := flagQuiet || flagOutput == "table"
+			var onFound func(ble.Peripheral)
+			if streaming {
+				header := false
+				onFound = func(p ble.Peripheral) {
+					if flagQuiet {
+						fmt.Println(p.Name)
+						return
+					}
+					if !header {
+						fmt.Printf(scanRowFormat, "NAME", "ADDRESS", "RSSI")
+						header = true
+					}
+					fmt.Printf(scanRowFormat, p.Name, p.Address, strconv.Itoa(int(p.RSSI)))
+				}
+			}
+
 			// linger = duration, so the scan always runs the full time
 			// instead of stopping shortly after the first device.
-			found, err := ble.Scan(ctx, bleName, duration)
+			found, err := ble.Scan(ctx, bleName, duration, onFound)
 			if err != nil {
 				return err
 			}
-			sortByRSSI(found)
-
-			if flagQuiet {
-				for _, p := range found {
-					fmt.Println(p.Name)
+			if streaming {
+				if len(found) == 0 && !flagQuiet {
+					fmt.Println("No devices in provisioning mode found.")
 				}
 				return nil
 			}
-			if len(found) == 0 && flagOutput == "table" {
-				fmt.Println("No devices in provisioning mode found.")
-				return nil
-			}
+			sortByRSSI(found)
 			t := &output.Table{Headers: []string{"NAME", "ADDRESS", "RSSI"}}
 			for _, p := range found {
 				t.Rows = append(t.Rows, []string{p.Name, p.Address, strconv.Itoa(int(p.RSSI))})
@@ -222,6 +237,11 @@ func deviceScanCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&duration, "duration", 10*time.Second, "How long to scan")
 	return cmd
 }
+
+// scanRowFormat has fixed widths because streamed rows can't be aligned
+// after the fact: advertised names are kept under ~30 bytes by the 31-byte
+// advertising packet, and a MAC address is 17 characters.
+const scanRowFormat = "%-30s  %-17s  %s\n"
 
 // sortByRSSI puts the strongest signal (usually the nearest device) first.
 func sortByRSSI(ps []ble.Peripheral) {
