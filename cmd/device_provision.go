@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/anthony-blynk/blynk-cli/internal/api"
 	"github.com/anthony-blynk/blynk-cli/internal/ble"
+	"github.com/anthony-blynk/blynk-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -173,6 +176,56 @@ over Bluetooth, and waits for it to come online. The token is never printed.
 	cmd.Flags().DurationVar(&connectTimeout, "connect-timeout", 30*time.Second, "How long to wait for the Bluetooth link (Windows can take ~15 s)")
 	cmd.Flags().DurationVar(&onlineTimeout, "online-timeout", time.Minute, "How long to wait for the device to show online in Blynk")
 	return cmd
+}
+
+func deviceScanCmd() *cobra.Command {
+	var bleName string
+	var duration time.Duration
+
+	cmd := &cobra.Command{
+		Use:   "scan",
+		Short: "List nearby devices advertising Blynk BLE provisioning (in pairing mode)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if !flagQuiet {
+				fmt.Fprintf(os.Stderr, "Scanning for %s...\n", duration)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), duration)
+			defer cancel()
+			// linger = duration, so the scan always runs the full time
+			// instead of stopping shortly after the first device.
+			found, err := ble.Scan(ctx, bleName, duration)
+			if err != nil {
+				return err
+			}
+			sortByRSSI(found)
+
+			if flagQuiet {
+				for _, p := range found {
+					fmt.Println(p.Name)
+				}
+				return nil
+			}
+			if len(found) == 0 && flagOutput == "table" {
+				fmt.Println("No devices in provisioning mode found.")
+				return nil
+			}
+			t := &output.Table{Headers: []string{"NAME", "ADDRESS", "RSSI"}}
+			for _, p := range found {
+				t.Rows = append(t.Rows, []string{p.Name, p.Address, strconv.Itoa(int(p.RSSI))})
+			}
+			return output.Render(os.Stdout, flagOutput, found, t)
+		},
+	}
+
+	cmd.Flags().StringVar(&bleName, "ble-name", "", "Only list devices whose advertised name contains this")
+	cmd.Flags().DurationVar(&duration, "duration", 10*time.Second, "How long to scan")
+	return cmd
+}
+
+// sortByRSSI puts the strongest signal (usually the nearest device) first.
+func sortByRSSI(ps []ble.Peripheral) {
+	slices.SortStableFunc(ps, func(a, b ble.Peripheral) int { return int(b.RSSI) - int(a.RSSI) })
 }
 
 var provisionStageLabels = map[string]string{

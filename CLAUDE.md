@@ -524,7 +524,14 @@ auth token before this was caught (fixed same day as `--online`, via the
 ```
 device provision --template <id-or-name> [--name] [--ble-name] [--wifi-ssid] [--wifi-pass] [-y]
 device provision --device <id-or-name> [--ble-name] ...      # pair an existing device / retry
+device scan [--ble-name] [--duration 10s]                     # list devices advertising provisioning
 ```
+
+`device scan` lists everything advertising the provisioning service,
+strongest signal first (`-q` = names only). It can't tell whether a
+device is really in pairing mode: blynk-provisioning (Linux gateways) never
+unregisters its advertisement after pairing, so a paired EG5120 still
+showed up (2026-11-03) — a blynk-provisioning bug, not the CLI's.
 
 Plays the Blynk app's side of BLE provisioning (protocol:
 `C:\Blynk\blynk-edge-agent\docs\blynk-ble-provisioning-protocol.md`):

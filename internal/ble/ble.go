@@ -22,10 +22,10 @@ var ErrUnsupported = errors.New("BLE provisioning isn't available in this build 
 
 // Peripheral is a device found advertising the provisioning service.
 type Peripheral struct {
-	Name    string
-	Address string
-	RSSI    int16
-	addr    any // transport-specific address, used by Dial
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	RSSI    int16  `json:"rssi"`
+	addr    any    // transport-specific address, used by Dial
 }
 
 // Info is the device's reply to {"t":"info"}.

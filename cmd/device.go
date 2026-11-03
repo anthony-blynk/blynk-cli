@@ -23,6 +23,7 @@ func init() {
 		deviceListCmd(),
 		deviceGetCmd(),
 		deviceProvisionCmd(),
+		deviceScanCmd(),
 	)
 }
 
