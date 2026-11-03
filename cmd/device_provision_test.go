@@ -22,6 +22,14 @@ func TestDefaultProvisionName(t *testing.T) {
 	}
 }
 
+func TestSortByRSSIStrongestFirst(t *testing.T) {
+	ps := []ble.Peripheral{{Name: "far", RSSI: -85}, {Name: "near", RSSI: -54}, {Name: "mid", RSSI: -70}}
+	sortByRSSI(ps)
+	if ps[0].Name != "near" || ps[1].Name != "mid" || ps[2].Name != "far" {
+		t.Errorf("order = %+v", ps)
+	}
+}
+
 func TestPickPeripheral(t *testing.T) {
 	gw := ble.Peripheral{Name: "Blynk Modbus Gateway-F8XQ", Address: "2C:3B:70:E9:25:EC"}
 	pi := ble.Peripheral{Name: "Blynk Device-JS3A", Address: "E4:5F:01:ED:56:E7"}
