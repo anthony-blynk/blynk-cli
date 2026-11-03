@@ -8,7 +8,7 @@ import (
 )
 
 // Scan is unavailable: tinygo's macOS backend (CoreBluetooth) needs cgo.
-func Scan(context.Context, string, time.Duration) ([]Peripheral, error) {
+func Scan(context.Context, string, time.Duration, func(Peripheral)) ([]Peripheral, error) {
 	return nil, ErrUnsupported
 }
 

@@ -44,7 +44,8 @@ func adapter() (*bluetooth.Adapter, error) {
 // contains nameFilter (case-insensitive; "" matches any). It returns once
 // linger has passed since the first match — so a second device advertising
 // at the same time still shows up — or when ctx ends, whichever is first.
-func Scan(ctx context.Context, nameFilter string, linger time.Duration) ([]Peripheral, error) {
+// onFound, if non-nil, is called the first time each device is seen.
+func Scan(ctx context.Context, nameFilter string, linger time.Duration, onFound func(Peripheral)) ([]Peripheral, error) {
 	a, err := adapter()
 	if err != nil {
 		return nil, err
@@ -64,15 +65,20 @@ func Scan(ctx context.Context, nameFilter string, linger time.Duration) ([]Perip
 				return
 			}
 			addr := r.Address.String()
+			p := Peripheral{Name: name, Address: addr, RSSI: r.RSSI, addr: r.Address}
 			mu.Lock()
-			defer mu.Unlock()
-			if _, seen := found[addr]; !seen {
+			_, seen := found[addr]
+			found[addr] = p
+			if !seen {
 				order = append(order, addr)
 				if len(order) == 1 {
 					close(firstMatch)
 				}
 			}
-			found[addr] = Peripheral{Name: name, Address: addr, RSSI: r.RSSI, addr: r.Address}
+			mu.Unlock()
+			if !seen && onFound != nil {
+				onFound(p)
+			}
 		})
 	}()
 
